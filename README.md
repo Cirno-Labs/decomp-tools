@@ -85,9 +85,18 @@ through `GHIDRA`, `ghidra.path` or the newest `~/opt/ghidra_*`.
 | `tools-pull` | `git subtree pull --prefix tools decomp-tools main --squash` |
 | `tools-push` | `git subtree push --prefix tools decomp-tools main` |
 
-Change the tools in any game repository, commit the change to `tools/`
-on its own (a commit that touches only `tools/` splits cleanly), then
-`just tools-push`, and `just tools-pull` in the other games.
+Each pull adds two commits to the game repository: a squash commit
+holding the new state of the tools, and a merge commit that brings it
+into `tools/`. Both carry git-subtree's own trailers
+(`git-subtree-dir`, `git-subtree-split`), which it needs to find the
+last pull.
+
+Change the tools in any game repository and commit the change to
+`tools/` on its own: `tools-push` splits the commits that touched
+`tools/` out of the game's history and pushes them as decomp-tools
+commits with the same messages, and a commit that also touched other
+files would bring only its `tools/` part along. Then `just tools-pull`
+in the other games.
 
 ## Tools
 
