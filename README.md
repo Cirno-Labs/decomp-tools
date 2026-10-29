@@ -21,8 +21,8 @@ compiler.
 
 ## Using it in a game repository
 
-A game repository includes this repository as a git subtree at `tools/`
-(not a submodule), describes itself in `project.toml` at its root, and
+A game repository includes this repository as a git submodule at
+`tools/`, describes itself in `project.toml` at its root, and
 imports the shared recipes into its justfile:
 
 ```just
@@ -49,10 +49,10 @@ tools/        this repository
 build hook. To add the tools to a game repository:
 
 ```sh
-git subtree add --prefix tools git@github.com:Cirno-Labs/decomp-tools.git main --squash
+git submodule add https://github.com/Cirno-Labs/decomp-tools.git tools
 cp tools/examples/th07.toml project.toml   # then adapt it
 echo "import 'tools/common.just'" > justfile
-just tools-remote
+just tools-init hooks
 ```
 
 ## Recipes
@@ -77,30 +77,23 @@ just tools-remote
 Compiles run on half the cores; `JOBS` overrides it. Ghidra is found
 through `GHIDRA`, `ghidra.path` or the newest `~/opt/ghidra_*`.
 
-### The subtree
+### The submodule
 
 | Recipe | Runs |
 | --- | --- |
-| `tools-remote` | adds the `decomp-tools` remote, `git@github.com:Cirno-Labs/decomp-tools.git` |
-| `tools-pull` | `git subtree pull --prefix tools decomp-tools main --squash` |
-| `tools-push` | `git subtree push --prefix tools decomp-tools main` |
+| `tools-init` | `git submodule update --init tools`, then puts `tools/` on a `main` branch at the recorded commit |
+| `tools-pull` | `git pull --ff-only` on `tools/`' `main` |
+| `tools-push` | `git push` of `tools/`' `main` to `git@github.com:Cirno-Labs/decomp-tools.git` |
 
-Each pull adds two commits to the game repository: a squash commit
-holding the new state of the tools, and a merge commit that brings it
-into `tools/`. Both carry git-subtree's own trailers
-(`git-subtree-dir`, `git-subtree-split`), which it needs to find the
-last pull.
+`tools/` is a checkout of this repository, so a change to the tools is
+a commit made inside `tools/` (`git -C tools commit`), pushed with
+`just tools-push`. The game repository then records the new commit
+with a commit of its own (`git add tools`). In the other games,
+`just tools-pull` and commit the pointer the same way.
 
-Change the tools in any game repository and commit the change to
-`tools/` on its own: `tools-push` splits the commits that touched
-`tools/` out of the game's history and pushes them as decomp-tools
-commits with the same messages, and a commit that also touched other
-files would bring only its `tools/` part along. Then `just tools-pull`
-in the other games.
-
-The split history that `tools-push` sends also holds the merge commits
-of the game's earlier pulls (`Merge commit '...' as 'tools'`), so
-these show up in decomp-tools' history too.
+A fresh clone of a game needs `git clone --recursive`, or
+`just tools-init` after it. `git submodule update` on its own leaves
+`tools/` on a detached HEAD, where a commit belongs to no branch.
 
 ## Tools
 

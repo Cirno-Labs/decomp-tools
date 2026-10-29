@@ -5,9 +5,9 @@
 export WINEPREFIX := justfile_directory() / ".wine"
 export WINEDEBUG := env("WINEDEBUG", "-all")
 
-# The tools repository, pulled in as a git subtree at tools/
-tools_remote := "decomp-tools"
-tools_url := "git@github.com:Cirno-Labs/decomp-tools.git"
+# The tools repository, checked out as a git submodule at tools/;
+# pushes go over SSH
+tools_push_url := "git@github.com:Cirno-Labs/decomp-tools.git"
 
 # List recipes. [default] makes it the default although it is imported:
 # just only takes the first recipe of the root justfile otherwise.
@@ -62,9 +62,10 @@ decompile *addrs:
 progress: build _orig
     python3 tools/render_progress.py
 
-# Use tools/hooks/: 50/72 messages, no trailers; commits redraw progress.svg if hooks.progress
+# Use tools/hooks/ here and in tools/: 50/72 messages, no trailers; commits redraw progress.svg if hooks.progress
 hooks:
     git config core.hooksPath tools/hooks
+    git -C tools config core.hooksPath hooks
 
 # Remove build outputs (keeps the Ghidra project)
 clean:
@@ -75,13 +76,18 @@ _orig:
     python3 tools/project.py orig
 
 # Add the decomp-tools git remote that tools-pull and tools-push use
-tools-remote:
-    git remote add {{ tools_remote }} {{ tools_url }} || git remote set-url {{ tools_remote }} {{ tools_url }}
+# Check out tools/ at the commit the game records, on a main branch
+# rather than a detached HEAD (after a clone or a pointer change)
+tools-init:
+    git submodule update --init tools
+    git -C tools switch -q -C main "$(git rev-parse HEAD:tools)"
 
-# Merge the tools repository's main into tools/ as one squashed commit
+# Bring tools/ up to decomp-tools' main; commit the new pointer afterwards
 tools-pull:
-    git subtree pull --prefix tools {{ tools_remote }} main --squash
+    git -C tools switch -q main
+    git -C tools pull -q --ff-only
+    git -C tools log -1 --oneline
 
-# Push the commits that changed tools/ to the tools repository's main
+# Push the commits made in tools/ to decomp-tools' main
 tools-push:
-    git subtree push --prefix tools {{ tools_remote }} main
+    git -C tools push {{ tools_push_url }} main
