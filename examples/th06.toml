@@ -1,0 +1,37 @@
+# th06: 東方紅魔郷 ~ the Embodiment of Scarlet Devil, 1.02h
+
+[game]
+name = "th06"
+title = "東方紅魔郷 1.02h"
+window_title = "Embodiment of Scarlet Devil"  # in the Japanese and the English title
+dir = "orig/th06_102h"
+exe = "東方紅魔郷.exe"
+checksums = "orig/th06_102h.sha1"
+original = "build/th06_102h.exe"
+game_end = 0x43D158  # archives last; D3DX8 and the CRT follow
+standalone_extras = ["orig/th06e/th06e_*.DAT"]  # FEAT=english's archives
+
+[ghidra]
+project = "th06_102h"
+functions = "build/functions_102h.csv"
+
+[build]
+cflags = ["/Od", "/Ob1", "/G5", "/GX", "/Op", "/Oi", "/GS", "/Gy", "/GF"]
+hook = "scripts/build_hook.py"  # the English feature
+
+[exe]
+obj_dir = "build/obj_exe"
+defines = ["TH06_EXE=1"]
+link_order = "first"
+ldflags = ["/SUBSYSTEM:WINDOWS", "/FIXED", "/OPT:REF", "/OPT:ICF", "/NODEFAULTLIB:libc.lib"]
+# The original's order: DirectInput first, D3DX8 after the import thunks,
+# uuid's GUID_NULL before the CRT's .rdata, the CRT last.
+libs = ["dinput8.lib", "dsound.lib", "d3d8.lib", "d3dx8.lib", "dxguid.lib", "winmm.lib",
+        "kernel32.lib", "user32.lib", "gdi32.lib", "uuid.lib", "libcmt.lib"]
+
+[exe.features]
+frame_cap = "FEAT_FRAME_CAP"
+english = "FEAT_ENGLISH"
+
+[psdk]
+libs = ["Gdi32.Lib", "Kernel32.Lib", "User32.Lib", "Uuid.Lib", "WinMM.Lib"]

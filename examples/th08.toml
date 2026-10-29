@@ -1,0 +1,30 @@
+# th08: 東方永夜抄 ~ Imperishable Night, 1.00d
+
+[game]
+name = "th08"
+title = "東方永夜抄 1.00d"
+window_title = "東方永夜抄"
+dir = "orig/th08_100d"
+exe = "th08.exe"
+checksums = "orig/th08_100d.sha1"
+original = "build/th08_100d.exe"
+game_end = 0x475298  # D3DX8's tables, D3DX8 and the CRT follow
+
+[ghidra]
+project = "th08_100d"
+functions = "build/functions_100d.csv"
+
+[build]
+cflags = ["/Od", "/Gr", "/GX", "/Oi"]
+lib = ['C:\dx8\lib', 'C:\msvc7\lib', 'C:\psdk\Lib']
+
+[exe]
+# Not set up for the standalone exe yet: the DLL's objects, in source
+# order.
+obj_dir = "build/obj"
+link_order = "source"
+libs = ["libcmt.lib", "d3dx8.lib", "d3d8.lib", "dsound.lib", "dinput8.lib", "dxguid.lib",
+        "winmm.lib", "kernel32.lib", "user32.lib", "gdi32.lib"]
+
+[hooks]
+progress = true
