@@ -37,7 +37,14 @@ def patch(src, dst):
     if sechdr + 40 > headers_size:
         sys.exit("no room for another section header")
     if any(d[sechdr:sechdr + 40]):
-        sys.exit("the space after the section headers is in use")
+        # Linkers can leave junk there (th08 has a compiler banner string).
+        # It is free unless a data directory points into it; the bound
+        # imports that usually live there are dropped below anyway.
+        for i in range(16):
+            dir_rva, dir_size = struct.unpack_from("<II", d, opt + 96 + 8 * i)
+            if i != 11 and dir_size and dir_rva < sechdr + 40 and sechdr < dir_rva + dir_size:
+                sys.exit("the space after the section headers is in use")
+        d[sechdr:sechdr + 40] = bytes(40)
 
     last = sechdr - 40
     vsize, va = struct.unpack_from("<II", d, last + 8)
