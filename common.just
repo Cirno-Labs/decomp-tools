@@ -9,7 +9,9 @@ export WINEDEBUG := env("WINEDEBUG", "-all")
 tools_remote := "decomp-tools"
 tools_url := "git@github.com:Cirno-Labs/decomp-tools.git"
 
-# List recipes
+# List recipes. [default] makes it the default although it is imported:
+# just only takes the first recipe of the root justfile otherwise.
+[default]
 default:
     @just --list
 

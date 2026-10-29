@@ -205,6 +205,7 @@ The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 ## Requirements
 
 - Python 3.11 or later (for `tomllib`), [just](https://github.com/casey/just)
+  recent enough for the `[default]` attribute (tested with 1.58)
 - Wine (32-bit, with its `msidb`), binutils (`objdump`), 7-Zip
 - For `run`: Xvfb, xdotool, ImageMagick, 32-bit Mesa OpenGL and the
   `ja_JP.UTF-8` locale
