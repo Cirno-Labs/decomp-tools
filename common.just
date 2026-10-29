@@ -80,7 +80,7 @@ _orig:
 # rather than a detached HEAD (after a clone or a pointer change)
 tools-init:
     git submodule update --init tools
-    git -C tools switch -q -C main "$(git rev-parse HEAD:tools)"
+    git -C tools switch -q -C main "$(git rev-parse :tools)"
 
 # Bring tools/ up to decomp-tools' main; commit the new pointer afterwards
 tools-pull:
