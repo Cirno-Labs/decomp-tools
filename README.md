@@ -92,8 +92,10 @@ with a commit of its own (`git add tools`). In the other games,
 `just tools-pull` and commit the pointer the same way.
 
 A fresh clone of a game needs `git clone --recursive`, or
-`just tools-init` after it. `git submodule update` on its own leaves
-`tools/` on a detached HEAD, where a commit belongs to no branch.
+`git submodule update --init tools` after it: the justfile imports
+from `tools/`, so `just` can't run before. Either leaves `tools/` on a
+detached HEAD, where a commit belongs to no branch; `just tools-init`
+puts it on `main` at the same commit.
 
 ## Tools
 
