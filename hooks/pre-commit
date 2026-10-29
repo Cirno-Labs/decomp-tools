@@ -1,0 +1,9 @@
+#!/bin/sh
+# Redraws docs/progress.svg from the working tree and adds it to the
+# commit, so every commit carries its own progress. Enable with
+# `just hooks`. A failed build stops the commit.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+out=$(just progress 2>&1) || { echo "$out"; echo "pre-commit: just progress failed"; exit 1; }
+echo "$out" | tail -1
+git add docs/progress.svg
