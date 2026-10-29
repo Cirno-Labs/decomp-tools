@@ -98,6 +98,10 @@ commits with the same messages, and a commit that also touched other
 files would bring only its `tools/` part along. Then `just tools-pull`
 in the other games.
 
+The split history that `tools-push` sends also holds the merge commits
+of the game's earlier pulls (`Merge commit '...' as 'tools'`), so
+these show up in decomp-tools' history too.
+
 ## Tools
 
 | File | Does |
