@@ -20,7 +20,9 @@ it).
 """
 import os, re, shutil, subprocess, sys, tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import project
+
+ROOT = project.ROOT
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 SVG = "docs/progress.svg"
@@ -146,11 +148,14 @@ def rename_history(base, args):
     for name in os.listdir(TOOLS):
         if name.endswith(".py"):
             shutil.copy(os.path.join(TOOLS, name), tools)
+    # And with this project.toml, which older commits may not have.
+    shutil.copy(project.PATH, os.path.join(tools, "project.toml"))
     with open(os.path.join(tools, "pairs.txt"), "w") as f:
         f.writelines(f"{o} {n}\n" for o, n in pairs)
     me = f"{sys.executable} {os.path.join(tools, 'rename.py')}"
     pairs_arg = "@" + os.path.join(tools, "pairs.txt")
-    env = dict(os.environ, FILTER_BRANCH_SQUELCH_WARNING="1")
+    env = dict(os.environ, FILTER_BRANCH_SQUELCH_WARNING="1",
+               DECOMP_PROJECT=os.path.join(tools, "project.toml"))
     result = subprocess.run(["git", "filter-branch", "-f",
                              "--tree-filter", f"{me} --tree {pairs_arg}",
                              "--msg-filter", f"{me} --message {pairs_arg}",
