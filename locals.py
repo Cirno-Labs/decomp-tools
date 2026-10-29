@@ -92,7 +92,7 @@ def compile_orders(sets):
         obj = os.path.join(tmp, "probe.obj")
         with open(path, "w") as f:
             f.write(src)
-        subprocess.run(["wine", r"C:\msvc7\bin\cl.exe", "/nologo", "/c", *build.CFLAGS,
+        subprocess.run(["wine", build.BUILD["bin"] + r"\cl.exe", "/nologo", "/c", *build.CFLAGS,
                         "/Fo" + build.win(os.path.relpath(obj, build.ROOT)),
                         build.win(os.path.relpath(path, build.ROOT))],
                        env=build.ENV, cwd=build.ROOT, capture_output=True, timeout=build.TIMEOUT, check=True)
