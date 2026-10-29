@@ -55,6 +55,9 @@ EXE_CFLAGS = CFLAGS + EXE_CONFIG["cflags"]
 EXE_DEFINES = ["/D" + d for d in EXE_CONFIG["defines"]]
 GL = "/GL" in EXE_CFLAGS  # the exe is linked with /LTCG
 FEATURES = EXE_CONFIG["features"]  # FEAT name: macro
+# FEAT name: the sources only the exe with that feature builds
+FEATURE_SOURCES = {f: {os.path.normpath(p) for p in paths}
+                   for f, paths in EXE_CONFIG["feature_sources"].items()}
 GLUE_PREFIX = "dll_"  # objects from src/dll/, the DLL's own code
 DLL_ONLY, EXE_ONLY = "dll", "exe"  # subdirectories of src/ only one target builds
 TIMEOUT = BUILD["timeout"]  # cl spins forever after a fatal error
@@ -178,7 +181,7 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     except (OSError, ValueError):
         built = {}
     objs, stale = [], []
-    for src, obj in sources(target, obj_dir):
+    for src, obj in sources(target, obj_dir, feats):
         objs.append(obj)
         flags = file_flags(src, base) + defines
         if not (os.path.exists(obj) and os.path.getmtime(obj) > max(os.path.getmtime(src), headers)
@@ -209,12 +212,14 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     return objs
 
 
-def sources(target=DLL, obj_dir=OBJ):
-    """Yields (source, object) for each .cpp in src/ that `target` builds."""
+def sources(target=DLL, obj_dir=OBJ, feats=()):
+    """Yields (source, object) for each .cpp in src/ that `target` builds
+    with the features `feats`."""
     skip = EXE_ONLY if target == DLL else DLL_ONLY
+    unused = set().union(*(paths for f, paths in FEATURE_SOURCES.items() if f not in feats))
     for src in sorted(glob.glob(os.path.join(ROOT, "src/**/*.cpp"), recursive=True)):
         rel = os.path.relpath(src, os.path.join(ROOT, "src"))
-        if rel.split(os.sep)[0] == skip:
+        if rel.split(os.sep)[0] == skip or os.path.normpath(os.path.relpath(src, ROOT)) in unused:
             continue
         yield os.path.relpath(src, ROOT), os.path.join(obj_dir, rel.replace("/", "_")[:-4] + ".obj")
 
@@ -354,7 +359,7 @@ def main():
             print("features:", ", ".join(feats))
         if GL:
             # /GL objects hold no code to order them by: the plain ones do.
-            link_exe(compile_all(EXE), compile_all(EXE, True, feats), feats)
+            link_exe(compile_all(EXE, feats=feats), compile_all(EXE, True, feats), feats)
         else:
             link_exe(compile_all(EXE, True, feats), feats=feats)
         return

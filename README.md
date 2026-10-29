@@ -175,6 +175,7 @@ written as such (`0x46004B`). `DECOMP_PROJECT` names another file.
 | `ldflags` | `/SUBSYSTEM:WINDOWS /FIXED /NODEFAULTLIB:libc.lib` | linker flags |
 | `libs` | `libcmt.lib` | libraries, in the original's order |
 | `features` | `{}` | `FEAT` names and their macros: `frame_cap = "FEAT_FRAME_CAP"` compiles `FEAT=frame_cap` into `build/obj_frame_cap` with `/DFEAT_FRAME_CAP=1` |
+| `feature_sources` | `{}` | sources only the exe with a feature builds and links: `frame_cap = ["src/exe/framecap.cpp"]`; without the feature they make no object, which would still count in the Rich header |
 
 The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 

@@ -60,6 +60,7 @@ DEFAULTS = {
         "ldflags": ["/SUBSYSTEM:WINDOWS", "/FIXED", "/NODEFAULTLIB:libc.lib"],
         "libs": ["libcmt.lib"],
         "features": {},
+        "feature_sources": {},
     },
     "psdk": {
         "libs": [],
