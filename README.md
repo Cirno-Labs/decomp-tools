@@ -110,6 +110,8 @@ these show up in decomp-tools' history too.
 | `build.py` | compiles `src/` (Shift-JIS, per-file flags, parallel), writes the hook table and thunks, links the DLL and the standalone exe |
 | `compare.py` | compares compiled functions with the original, relocations resolved through `symbols.csv` |
 | `compare_exe.py` | compares the standalone exe with the original: headers, Rich header, sections, imports, code and data by symbol |
+| `order.py` | lists, per object, which of the standalone exe's functions sit at their original address and in the original's order (`--summary`: one line per object) |
+| `reorder.py` | sorts a `.cpp`'s function definitions into the original's address order |
 | `patch_exe.py` | adds the hook DLL to a copy of the original's import table |
 | `play.py` | runs the game under Xvfb, sends keys, takes screenshots |
 | `seed_symbols.py` | adds Ghidra's functions and the imports to `symbols.csv` |
