@@ -69,9 +69,16 @@ def import_symbols(dlls):
     wanted = {d.split(".")[0].lower() for d in dlls}
     out = {}
     for lib in sorted(sum((glob.glob(os.path.join(p, "*")) for p in LIBS), [])):
-        if os.path.basename(lib).split(".")[0].lower() not in wanted:
+        stem = os.path.basename(lib).split(".")[0].lower()
+        # d3dx9.lib imports from d3dx9_31.dll: a versioned DLL's library
+        # is found by the import descriptor it defines
+        versioned = [w for w in wanted if w.startswith(stem + "_")]
+        if stem not in wanted and not versioned:
             continue
         syms = subprocess.run(["objdump", "-t", lib], capture_output=True, text=True).stdout
+        if stem not in wanted and not any(f"__import_descriptor_{w}" in syms.lower()
+                                          for w in versioned):
+            continue
         for sym in re.findall(r" (__imp__\S+)$", syms, re.M):
             out.setdefault(re.sub(r"@\d+$", "", sym[len("__imp__"):]), sym)
     return out
