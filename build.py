@@ -365,7 +365,9 @@ def main():
         return
     if sys.argv[1:]:
         sys.exit(__doc__)
-    objs = compile_all()
+    # In the original's order, so that of an inline function several
+    # objects define the DLL keeps the copy the original kept.
+    objs = link_order(compile_all(), read_symbols(), EXE_CONFIG["link_order"])
     hooks = write_hooks(objs, read_symbols())
     tool("link", *DLL_CONFIG["ldflags"], "/MAP:" + win(DLL[:-4] + ".map"), "/OUT:" + win(DLL),
          *map(win, objs), win(hooks), *DLL_CONFIG["libs"])

@@ -49,11 +49,13 @@ def compiled_functions(symbols):
     data listing (offset, addend, bytes, mask) for the data references
     masked in the code."""
     # Objects of the current sources only: a renamed file leaves its old
-    # object behind. They are read in link order: of an inline function
+    # object behind. They are read in the original's link order
+    # (exe.link_order), as the hook DLL links them: of an inline function
     # several objects define, the linker keeps the first copy.
     seen = set()
-    for _, path in build.sources():
-        obj = coff.Object(os.path.join(ROOT, path))
+    objs = [os.path.join(ROOT, path) for _, path in build.sources()]
+    for path in build.link_order(objs, build.read_symbols(), build.EXE_CONFIG["link_order"]):
+        obj = coff.Object(path)
         for sym in obj.externals():
             if sym.section <= 0 or sym.name not in symbols or sym.name in seen:
                 continue
