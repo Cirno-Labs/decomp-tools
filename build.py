@@ -24,7 +24,9 @@ use, then give the link order.
 FEAT (a comma-separated list) turns on the exe's optional features,
 exe.features in project.toml: `FEAT=frame_cap build.py exe` compiles
 with /DFEAT_FRAME_CAP=1 into build/obj_frame_cap. The DLL is always
-built from the vanilla code, so it still matches the original.
+built from the vanilla code, so it still matches the original: with FEAT,
+`build.py` compiles only the DLL's own code, src/dll/, with the features'
+macros, for workarounds the hooked game needs.
 
 build.hook names a Python file with the game's own steps. It may define:
 
@@ -149,12 +151,16 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     Sources are UTF-8, but the game's strings are Shift-JIS and MSVC 7
     copies string bytes as they are, so each file is converted first.
     Objects go to build/obj or, with `exe_flags`, with the exe's flags to
-    exe.obj_dir, or build/obj_<features> with features.
+    exe.obj_dir, or build/obj_<features> with features. For the DLL,
+    features only define their macros in src/dll/.
     An object is rebuilt when its source or any header is newer, or when
     its flags changed: each object directory's flags.json records them.
     """
+    glue = []
     if not exe_flags:
         obj_dir, base, defines = OBJ, CFLAGS, []
+        glue = ["/D%s=1" % FEATURES[f] for f in feats]
+        feats = ()
     else:
         obj_dir = "_".join([OBJ, *feats]) if feats else OBJ_EXE
         base = EXE_CFLAGS
@@ -184,6 +190,8 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     for src, obj in sources(target, obj_dir, feats):
         objs.append(obj)
         flags = file_flags(src, base) + defines
+        if os.path.basename(obj).startswith(GLUE_PREFIX):
+            flags += glue
         if not (os.path.exists(obj) and os.path.getmtime(obj) > max(os.path.getmtime(src), headers)
                 and built.get(obj) == flags):
             stale.append((src, obj, flags))
@@ -367,7 +375,10 @@ def main():
         sys.exit(__doc__)
     # In the original's order, so that of an inline function several
     # objects define the DLL keeps the copy the original kept.
-    objs = link_order(compile_all(), read_symbols(), EXE_CONFIG["link_order"])
+    feats = features()
+    if feats:
+        print("DLL features:", ", ".join(feats))
+    objs = link_order(compile_all(feats=feats), read_symbols(), EXE_CONFIG["link_order"])
     hooks = write_hooks(objs, read_symbols())
     tool("link", *DLL_CONFIG["ldflags"], "/MAP:" + win(DLL[:-4] + ".map"), "/OUT:" + win(DLL),
          *map(win, objs), win(hooks), *DLL_CONFIG["libs"])
