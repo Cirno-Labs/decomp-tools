@@ -57,6 +57,7 @@ DEFAULTS = {
         "cflags": [],
         "defines": [],
         "link_order": "median",
+        "pch": "",  # a header in src/ the exe's unoptimized objects precompile
         "ldflags": ["/SUBSYSTEM:WINDOWS", "/FIXED", "/NODEFAULTLIB:libc.lib"],
         "libs": ["libcmt.lib"],
         "features": {},

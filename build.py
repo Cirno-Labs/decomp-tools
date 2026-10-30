@@ -21,6 +21,17 @@ header can show, the exe's objects hold no machine code and are linked
 with /LTCG: the plain objects in build/obj, which the DLL and compare.py
 use, then give the link order.
 
+With exe.pch, a header in src/, the exe's objects are compiled with that
+header precompiled, as the original's were: each object directory gets
+a stub that includes it, compiled with /Yc, and every source whose
+`// cflags:` line leaves the optimization flags alone is compiled with
+/FI and /Yu, the header force-included. A /Yu compile takes the
+precompiled header's optimization, so a source optimized differently
+can't use it, as in the original. The precompiled header changes where
+code goes, not what it is: an object emits the header's inline
+functions after its own functions, in the order the header defines
+them, instead of after each one's first caller.
+
 FEAT (a comma-separated list) turns on the exe's optional features,
 exe.features in project.toml: `FEAT=frame_cap build.py exe` compiles
 with /DFEAT_FRAME_CAP=1 into build/obj_frame_cap. The DLL is always
@@ -56,6 +67,8 @@ CFLAGS = BUILD["cflags"]
 EXE_CFLAGS = CFLAGS + EXE_CONFIG["cflags"]
 EXE_DEFINES = ["/D" + d for d in EXE_CONFIG["defines"]]
 GL = "/GL" in EXE_CFLAGS  # the exe is linked with /LTCG
+PCH = EXE_CONFIG["pch"]  # the exe's precompiled header, or ""
+PCH_STUB = "pch"  # <obj_dir>/pch.cpp compiles it into pch.obj and <name>.pch
 FEATURES = EXE_CONFIG["features"]  # FEAT name: macro
 # FEAT name: the sources only the exe with that feature builds
 FEATURE_SOURCES = {f: {os.path.normpath(p) for p in paths}
@@ -152,7 +165,8 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     copies string bytes as they are, so each file is converted first.
     Objects go to build/obj or, with `exe_flags`, with the exe's flags to
     exe.obj_dir, or build/obj_<features> with features. For the DLL,
-    features only define their macros in src/dll/.
+    features only define their macros in src/dll/. The exe's objects use
+    exe.pch when it is set (see uses_pch).
     An object is rebuilt when its source or any header is newer, or when
     its flags changed: each object directory's flags.json records them.
     """
@@ -187,13 +201,21 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     except (OSError, ValueError):
         built = {}
     objs, stale = [], []
+    pch = exe_flags and not GL and PCH
+    if pch:
+        pch_obj, pch_flags = precompile(obj_dir, base + defines, headers, built)
+        objs.append(pch_obj)
+        newest = os.path.getmtime(pch_obj)
     for src, obj in sources(target, obj_dir, feats):
         objs.append(obj)
         flags = file_flags(src, base) + defines
         if os.path.basename(obj).startswith(GLUE_PREFIX):
             flags += glue
-        if not (os.path.exists(obj) and os.path.getmtime(obj) > max(os.path.getmtime(src), headers)
-                and built.get(obj) == flags):
+        newer = max(os.path.getmtime(src), headers)
+        if pch and uses_pch(src, base):
+            flags += pch_flags
+            newer = max(newer, newest)
+        if not (os.path.exists(obj) and os.path.getmtime(obj) > newer and built.get(obj) == flags):
             stale.append((src, obj, flags))
 
     def compile_one(job):
@@ -218,6 +240,38 @@ def compile_all(target=DLL, exe_flags=False, feats=()):
     if failed:
         sys.exit(failed)
     return objs
+
+
+def precompile(obj_dir, flags, headers, built):
+    """Compiles exe.pch into obj_dir, when it or its flags are out of date,
+    through a stub that only includes it. Returns the stub's object and
+    the flags that use the precompiled header."""
+    stub, obj = (os.path.join(obj_dir, PCH_STUB + ext) for ext in (".cpp", ".obj"))
+    pch = os.path.join(obj_dir, project.NAME + ".pch")
+    text = f'#include "{PCH}"\n'
+    if not os.path.exists(stub) or open(stub).read() != text:
+        with open(stub, "w") as f:
+            f.write(text)
+    flags = [*flags, "/Yc" + PCH, "/Fp" + win(pch)]
+    if not (os.path.exists(obj) and os.path.exists(pch) and built.get(obj) == flags
+            and min(map(os.path.getmtime, (obj, pch))) > max(headers, os.path.getmtime(stub))):
+        print("cl", stub)
+        code, out = run_tool("cl", "/c", *flags, "/I" + win(SJIS), "/Fo" + win(obj), win(stub))
+        if out:
+            print(out)
+        if code:
+            built.pop(obj, None)
+            sys.exit(code)
+        built[obj] = flags
+    return obj, ["/FI" + PCH, "/Yu" + PCH, "/Fp" + win(pch)]
+
+
+def uses_pch(src, base):
+    """Whether the exe compiles `src` with the precompiled header: unless
+    its `// cflags:` line changes an optimization flag (/O...), as /Yu
+    would ignore that change."""
+    opt = lambda flags: {f for f in flags if f.startswith("/O")}
+    return opt(file_flags(src, base)) == opt(base)
 
 
 def sources(target=DLL, obj_dir=OBJ, feats=()):

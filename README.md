@@ -172,6 +172,7 @@ written as such (`0x46004B`). `DECOMP_PROJECT` names another file.
 | `cflags` | `[]` | flags added to `build.cflags`, before a file's own; with `/GL` the exe is a second, `/LTCG` build and the plain objects give the link order |
 | `defines` | `[]` | macros defined after a file's own flags (`TH06_EXE=1`) |
 | `link_order` | `median` | object order: by the `median` or `first` original address of the functions only that object defines, or `source` order |
+| `pch` | `""` | a header in `src/` to precompile (`global.h`): each object directory gets a `/Yc` stub, `pch.obj`, and every file whose `// cflags:` line changes no `/O` flag is compiled with `/FI` and `/Yu`. The header's inline functions then go at the end of each object, in the header's order, as in an original built that way |
 | `ldflags` | `/SUBSYSTEM:WINDOWS /FIXED /NODEFAULTLIB:libc.lib` | linker flags |
 | `libs` | `libcmt.lib` | libraries, in the original's order |
 | `features` | `{}` | `FEAT` names and their macros: `frame_cap = "FEAT_FRAME_CAP"` compiles `FEAT=frame_cap` into `build/obj_frame_cap` with `/DFEAT_FRAME_CAP=1` |
