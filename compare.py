@@ -56,16 +56,24 @@ def compiled_functions(symbols):
     objs = [os.path.join(ROOT, path) for _, path in build.sources()]
     for path in build.link_order(objs, build.read_symbols(), build.EXE_CONFIG["link_order"]):
         obj = coff.Object(path)
-        for sym in obj.externals():
+        for sym in obj.definitions():
             if sym.section <= 0 or sym.name not in symbols or sym.name in seen:
                 continue
             seen.add(sym.name)
             sec = obj.sections[sym.section - 1]
-            # Labels (storage class 6) are case targets inside a function;
-            # a switch's jump table starts at a static symbol after it.
+            # The function ends at the next symbol after it, but not at a
+            # label inside it: MSVC 7.0 marks a switch's case targets as
+            # labels (storage class 6), MSVC 7.1 at /O2 as statics named
+            # $L... A switch's jump table also starts at a $L static, the
+            # one the function's own code refers to before it, and the
+            # function ends there.
+            tables = {obj.symbols[i].name for off, i, _ in sec.relocs
+                      if sym.value <= off and obj.symbols[i].section == sym.section
+                      and obj.symbols[i].value > off}
             starts = sorted(s.value for s in obj.symbols
                             if s and s.section == sym.section and s.value > sym.value
-                            and s.storage != LABEL)
+                            and s.storage != LABEL
+                            and (not s.name.startswith("$") or s.name in tables))
             end = starts[0] if starts else len(sec.data)
             addr = symbols[sym.name][0]
             code = bytearray(sec.data[sym.value:end])

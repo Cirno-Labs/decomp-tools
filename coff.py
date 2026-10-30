@@ -7,6 +7,7 @@ DIR32 = 0x06
 SYM_UNDEFINED = 0
 SYM_ABSOLUTE = -1
 CLASS_EXTERNAL = 2
+CLASS_STATIC = 3
 
 
 class Section:
@@ -50,6 +51,15 @@ class Object:
 
     def externals(self):
         return [s for s in self.symbols if s and s.storage == CLASS_EXTERNAL]
+
+    def definitions(self):
+        """The external symbols and the file-static functions, in symbol
+        table order. Statics named like sections (.text) or compiler
+        labels ($L123) are left out."""
+        return [s for s in self.symbols if s and (
+            s.storage == CLASS_EXTERNAL
+            or s.storage == CLASS_STATIC and s.section > 0 and s.name[:1] not in ".$"
+            and self.sections[s.section - 1].flags & CODE)]
 
 
 class Image:
