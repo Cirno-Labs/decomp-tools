@@ -70,7 +70,9 @@ DEFAULTS = {
         "import_libs": [".wine/drive_c/psdk/Lib", ".wine/drive_c/dx8/lib"],
     },
     "hooks": {
-        "progress": False,
+        "progress": False,  # pre-commit redraws docs/progress.svg
+        "compare": False,  # pre-commit fails unless every compiled function matches (gate.py)
+        "allow_diff": [],  # functions in src/ that may differ, by symbols.csv name
     },
 }
 

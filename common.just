@@ -62,7 +62,7 @@ decompile *addrs:
 progress: build _orig
     python3 tools/render_progress.py
 
-# Use tools/hooks/ here and in tools/: 50/72 messages, no trailers; commits redraw progress.svg if hooks.progress
+# Use tools/hooks/ here and in tools/: 50/72 messages, no trailers; hooks.compare and hooks.progress gate and redraw
 hooks:
     git config core.hooksPath tools/hooks
     git -C tools config core.hooksPath hooks

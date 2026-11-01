@@ -71,7 +71,7 @@ just tools-init hooks
 | `analyze` | analyze the original with headless Ghidra, seed `config/symbols.csv` |
 | `decompile [ADDR...]` | write Ghidra's pseudocode to `build/decomp/` |
 | `progress` | render `docs/progress.svg` |
-| `hooks` | use `tools/hooks/`: 50/72 commit messages without type prefixes or trailers, and with `hooks.progress` a progress image in every commit |
+| `hooks` | use `tools/hooks/`: 50/72 commit messages without type prefixes or trailers, with `hooks.compare` only matching functions besides `hooks.allow_diff`, and with `hooks.progress` a progress image in every commit |
 | `clean` | remove build outputs (keeps the Ghidra project) |
 
 Compiles run on half the cores; `JOBS` overrides it. Ghidra is found
@@ -113,6 +113,7 @@ puts it on `main` at the same commit.
 | `name.py` | names a row of `symbols.csv` |
 | `rename.py` | renames functions in the working tree or throughout history |
 | `render_progress.py` | draws the progress image |
+| `gate.py` | the commit rule `hooks.compare` turns on, for the pre-commit hook |
 | `locals.py` | predicts and picks local variable names for a wanted stack layout under `/Od` |
 | `psdk_libs.py`, `msi_extract.py` | extract import libraries from the VS.NET 2002 media |
 | `coff.py`, `rsrc.py`, `peinfo.py` | COFF objects, resources, PE and Rich header |
@@ -187,6 +188,18 @@ The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 | `psdk.libs` | `[]` | the import libraries `psdk-libs` extracts, as named on the media (`User32.Lib`) |
 | `symbols.import_libs` | `.wine/drive_c/psdk/Lib`, `.wine/drive_c/dx8/lib` | where `seed_symbols.py` looks up decorated import names |
 | `hooks.progress` | `false` | the pre-commit hook redraws `docs/progress.svg` and adds it |
+| `hooks.compare` | `false` | the pre-commit hook fails unless every compiled function matches the original, or `hooks.allow_diff` lists it |
+| `hooks.allow_diff` | `[]` | functions, by their `symbols.csv` name, that are in `src/` though they don't match yet |
+
+With `hooks.compare`, the pre-commit hook builds `src/` and runs the
+comparison (`gate.py`); `src/` and `config/` may then have no unstaged
+changes, so that what is built is what is committed. It also fails
+when a function HEAD's `docs/progress.svg` shows as matching is no
+longer compiled, such as one now inlined everywhere. A commit that
+makes a listed function match takes it off `hooks.allow_diff`. For a
+group of functions that only match together, commit them one at a time
+with `DECOMP_ALLOW_DIFF=NAME[,NAME...]` set: the named functions may
+differ in that commit. `git commit --no-verify` skips the hooks.
 
 ### The build hook
 
