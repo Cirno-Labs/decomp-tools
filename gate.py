@@ -14,8 +14,9 @@ so what is built is what is committed.
 
 hooks.allow_diff lists functions, by their symbols.csv name, that are in
 src/ though they don't match, such as ones that are logically equivalent
-but allocate registers differently. They may differ in every commit. A
-commit that makes one match takes it off the list.
+but allocate registers differently. They may differ in every commit, and
+are the functions farm.py permutes by default. A commit that makes one
+match takes it off the list.
 
 A group of functions that only match together lands one function per
 commit with DECOMP_ALLOW_DIFF=NAME[,NAME...] in the environment: the

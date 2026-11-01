@@ -70,6 +70,8 @@ just tools-init hooks
 | `psdk-libs ZIP` | extract VS.NET 2002's Platform SDK import libraries from its install media |
 | `analyze` | analyze the original with headless Ghidra, seed `config/symbols.csv` |
 | `decompile [ADDR...]` | write Ghidra's pseudocode to `build/decomp/` |
+| `permute NAME [ARGS]` | search source variants of a function for a byte match (see [The permuter](#the-permuter)) |
+| `farm [ARGS]` | permute every `hooks.allow_diff` function unattended, several at once |
 | `progress` | render `docs/progress.svg` |
 | `hooks` | use `tools/hooks/`: 50/72 commit messages without type prefixes or trailers, with `hooks.compare` only matching functions besides `hooks.allow_diff`, and with `hooks.progress` a progress image in every commit |
 | `clean` | remove build outputs (keeps the Ghidra project) |
@@ -113,6 +115,8 @@ puts it on `main` at the same commit.
 | `name.py` | names a row of `symbols.csv` |
 | `rename.py` | renames functions in the working tree or throughout history |
 | `render_progress.py` | draws the progress image |
+| `permute.py` | searches rewrites of one function (declaration, operand and statement order, if/else, loop and condition forms) for a byte match, compiling each variant alone |
+| `farm.py` | runs `permute.py` over every `hooks.allow_diff` function, several at once, unattended; keeps matching bodies in `build/farm/`, and `--apply` writes them into `src/` |
 | `gate.py` | the commit rule `hooks.compare` turns on, for the pre-commit hook |
 | `locals.py` | predicts and picks local variable names for a wanted stack layout under `/Od` |
 | `psdk_libs.py`, `msi_extract.py` | extract import libraries from the VS.NET 2002 media |
@@ -189,7 +193,7 @@ The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 | `symbols.import_libs` | `.wine/drive_c/psdk/Lib`, `.wine/drive_c/dx8/lib` | where `seed_symbols.py` looks up decorated import names |
 | `hooks.progress` | `false` | the pre-commit hook redraws `docs/progress.svg` and adds it |
 | `hooks.compare` | `false` | the pre-commit hook fails unless every compiled function matches the original, or `hooks.allow_diff` lists it |
-| `hooks.allow_diff` | `[]` | functions, by their `symbols.csv` name, that are in `src/` though they don't match yet |
+| `hooks.allow_diff` | `[]` | functions, by their `symbols.csv` name, that are in `src/` though they don't match yet; `farm` permutes these |
 
 With `hooks.compare`, the pre-commit hook builds `src/` and runs the
 comparison (`gate.py`); `src/` and `config/` may then have no unstaged
@@ -214,6 +218,41 @@ differ in that commit. `git commit --no-verify` skips the hooks.
 
 `examples/th06_build_hook.py` is th06's, for its English feature.
 
+## The permuter
+
+`just permute NAME` takes a function's definition in `src/` (NAME as
+`symbols.csv` names it, `Stage::DrawLayer`), applies random rewrites
+and compiles each variant alone with the file's flags, without
+linking. A variant scores the instructions that differ from the
+original, as `compare` cuts the function, plus 1000 for each other
+function of the file it breaks; the search climbs towards 0. Most
+rewrites must touch the lines whose code differs, which a `/Zd`
+compile maps to source lines. `src/` is never written: the best
+variant goes to `build/permute/STEM.c` (STEM is NAME with `::` as
+`-`) and is printed as a diff. A variant that matches byte for byte is
+correct by the match; any other may have changed the meaning.
+
+| Option | Does |
+| --- | --- |
+| `-j N`, `-t S`, `-s SEED` | compiles at once, seconds, random seed |
+| `--start FILE` | start from an earlier best variant |
+| `--file` | also move the file's top-level declarations; the variant goes to `STEM.file` whole |
+| `--sweep` | enumerate instead: declaration orders, operand swaps and single rewrites at the differing lines, beam search until a pass finds nothing (`sweep exhausted`) |
+| `--decls` | every order of the local declarations, which decides stack slots and can sway registers |
+| `--pad`, `--plan` | look for a shift of the compiler's symbol IDs (a VC5 effect, not seen with MSVC 7.1 so far) |
+
+`just farm` runs it over every `hooks.allow_diff` function (or the
+NAMEs given), `-p` functions at a time with `-j` compiles each, rounds
+of a sweep and a `-t` second random search from the best variant so
+far, `-r` rounds (0: until stopped). Matches land in `build/farm/`;
+`just farm --apply NAME` writes one into `src/`. Under Wine, a
+wineserver stays up between compiles, which makes each several times
+faster. On Windows, `build.py` runs the compiler directly, finding
+`C:\` paths of the build settings under `.wine/drive_c` first, and
+`compare.py` disassembles with capstone, so a copy of the repository
+with its prefix's `drive_c` and the original exe can farm there; copy
+`build/farm/` back.
+
 ## Requirements
 
 - Python 3.11 or later (for `tomllib`), [just](https://github.com/casey/just)
@@ -223,6 +262,8 @@ differ in that commit. `git commit --no-verify` skips the hooks.
   `ja_JP.UTF-8` locale
 - The original toolchain in the Wine prefix (bring your own copies)
 - Ghidra, for analysis
+- On Windows (`permute`, `farm`, `build`, `compare` only): Python with
+  `capstone`, run in UTF-8 mode (`PYTHONUTF8=1`)
 
 ## License
 

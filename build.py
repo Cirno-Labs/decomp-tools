@@ -39,6 +39,11 @@ built from the vanilla code, so it still matches the original: with FEAT,
 `build.py` compiles only the DLL's own code, src/dll/, with the features'
 macros, for workarounds the hooked game needs.
 
+On Windows, the tools run without wine, and a C:\\ path in the build
+settings is looked up under .wine/drive_c first, so a copy of the
+repository with its prefix's drive builds natively (for farm.py; run
+Python in UTF-8 mode, PYTHONUTF8=1, for the UTF-8 sources).
+
 build.hook names a Python file with the game's own steps. It may define:
 
     exe_flags(feats)      extra cl flags for the exe's objects (it may also
@@ -80,12 +85,24 @@ TIMEOUT = BUILD["timeout"]  # cl spins forever after a fatal error
 # free; JOBS overrides it.
 JOBS = int(os.environ.get("JOBS") or max(1, (os.cpu_count() or 2) // 2))
 
+NATIVE = os.name == "nt"  # no wine; C:\ paths are looked up under .wine/drive_c
+
+
+def host(path):
+    """`path`, a Windows path in the build settings, on this machine."""
+    if NATIVE and path[:3].upper() == "C:\\":
+        local = os.path.join(ROOT, ".wine", "drive_c", path[3:])
+        if os.path.exists(local):
+            return local
+    return path
+
+
 ENV = dict(
     os.environ,
     WINEPREFIX=os.environ.get("WINEPREFIX", os.path.join(ROOT, ".wine")),
     WINEDEBUG=os.environ.get("WINEDEBUG", "-all"),
-    INCLUDE=";".join(BUILD["include"]),
-    LIB=";".join(BUILD["lib"]),
+    INCLUDE=";".join(map(host, BUILD["include"])),
+    LIB=";".join(map(host, BUILD["lib"])),
 )
 
 _hook = None
@@ -111,13 +128,21 @@ def win(path):
 def run_tool(name, *args):
     """Runs an MSVC tool; returns its exit code and its output, without the
     lines that only name the file."""
-    cmd = ["wine", BUILD["bin"] + "\\" + name + ".exe", "/nologo", *args]
+    cmd = ([] if NATIVE else ["wine"]) + [host(BUILD["bin"] + "\\" + name + ".exe"), "/nologo", *args]
     try:
         r = subprocess.run(cmd, env=ENV, timeout=TIMEOUT, capture_output=True, text=True, errors="replace")
     except subprocess.TimeoutExpired:
         return 1, f"{name} timed out (fatal error?): {' '.join(args)}"
     out = "\n".join(l for l in r.stdout.splitlines() if l.strip() and not l.endswith(".cpp"))
     return r.returncode, out
+
+
+def keep_wineserver(seconds=30):
+    """Keeps the prefix's wineserver running until `seconds` after its
+    last client exits, for many short compiles in a row: each one
+    otherwise starts its own, which takes longer than the compile."""
+    if not NATIVE:
+        subprocess.run(["wineserver", f"-p{seconds}"], env=ENV)
 
 
 def tool(name, *args):
@@ -283,7 +308,7 @@ def sources(target=DLL, obj_dir=OBJ, feats=()):
         rel = os.path.relpath(src, os.path.join(ROOT, "src"))
         if rel.split(os.sep)[0] == skip or os.path.normpath(os.path.relpath(src, ROOT)) in unused:
             continue
-        yield os.path.relpath(src, ROOT), os.path.join(obj_dir, rel.replace("/", "_")[:-4] + ".obj")
+        yield os.path.relpath(src, ROOT), os.path.join(obj_dir, rel.replace(os.sep, "_")[:-4] + ".obj")
 
 
 def file_flags(src, base=CFLAGS):

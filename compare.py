@@ -8,7 +8,7 @@ function) are filled in and compared. The others are masked in the code;
 when they point at data the object defines, such as float constants and
 string literals, that data is compared with what the original points at.
 """
-import csv, os, subprocess, sys, tempfile
+import csv, os, shutil, subprocess, sys, tempfile
 
 import build, coff, project
 
@@ -105,6 +105,12 @@ def compiled_functions(symbols):
 
 
 def disasm(code, addr):
+    """The instructions in `code` at `addr`, as "bytes<TAB>instruction"
+    lines: objdump's, or capstone's where there is no objdump (Windows)."""
+    if not shutil.which("objdump"):
+        import capstone
+        cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        return [f"{i.bytes.hex(' ')}\t{i.mnemonic} {i.op_str}".rstrip() for i in cs.disasm(code, addr)]
     with tempfile.NamedTemporaryFile(suffix=".bin") as f:
         f.write(code)
         f.flush()

@@ -58,6 +58,16 @@ analyze: _orig
 decompile *addrs:
     tools/ghidra/decompile.sh {{ addrs }}
 
+# Search source variants of NAME for a byte match (-j JOBS -t SECONDS, --sweep, --decls, --file, --start FILE)
+[positional-arguments]
+permute name *args: _orig
+    python3 tools/permute.py "$@"
+
+# Permute the hooks.allow_diff functions (or NAMEs) unattended (-p PARALLEL -j JOBS -t S -r ROUNDS; --apply NAME)
+[positional-arguments]
+farm *args: _orig
+    python3 tools/farm.py "$@"
+
 # Render docs/progress.svg from symbols.csv and the build
 progress: build _orig
     python3 tools/render_progress.py

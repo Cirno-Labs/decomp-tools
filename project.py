@@ -72,7 +72,7 @@ DEFAULTS = {
     "hooks": {
         "progress": False,  # pre-commit redraws docs/progress.svg
         "compare": False,  # pre-commit fails unless every compiled function matches (gate.py)
-        "allow_diff": [],  # functions in src/ that may differ, by symbols.csv name
+        "allow_diff": [],  # functions in src/ that may differ, by symbols.csv name; farm.py's default
     },
 }
 
