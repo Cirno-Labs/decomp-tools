@@ -36,7 +36,10 @@ add what they learn about each function in build/permute/STEM.stats.json.
 
 --apply writes each kept body over its function's definition in src/,
 or the whole file when the match reordered its declarations, so apply
-those one at a time. Build and compare after it, since a body can flip
+those one at a time. A body is cut down first: a search leaves many
+rewrites that changed nothing, so each changed run of lines goes back
+to src/'s as long as the function still matches, until none can (one
+compile each). Build and compare after it, since a body can flip
 other functions, then commit each one, taking it off hooks.allow_diff in
 that commit.
 """
@@ -144,9 +147,34 @@ def learn():
     print(f"{total} improved functions: " + ", ".join(f"{k} {v}" for k, v in sorted(seen.items(), key=lambda x: -x[1])))
 
 
+def minimize(permute, name, src, text, start, end, body):
+    """`body`, a match of `name`, with each run of changed lines put back
+    as src/ has it while the function still matches."""
+    import difflib
+    s = permute.Scorer(name, src, text, start, end)
+    old, new = text[start:end].split("\n"), body.split("\n")
+    if s.score(body) != 0:
+        print(f"{name}: the kept body doesn't match here; written as it is")
+        return body
+    reverted = True
+    while reverted:
+        reverted = False
+        ops = [op for op in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes() if op[0] != "equal"]
+        for _, i1, i2, j1, j2 in reversed(ops):
+            trial = new[:j1] + old[i1:i2] + new[j2:]
+            if s.score("\n".join(trial)) == 0:
+                new, reverted = trial, True
+    shutil.rmtree(s.tmp, ignore_errors=True)
+    left = sum(op[0] != "equal" for op in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes())
+    print(f"{name}: {left} changed runs of lines needed")
+    return "\n".join(new)
+
+
 def apply(names):
     sys.path.insert(0, HERE)
-    import permute
+    import build, permute
+    build.keep_wineserver()
+    build.compile_all()
     for name in names:
         if not os.path.exists(found(name)):
             continue
@@ -157,7 +185,7 @@ def apply(names):
             done = open(whole, encoding="utf-8").read()
             print(f"{name}: written to {src}, with its declarations reordered")
         else:
-            done = text[:start] + body + text[end:]
+            done = text[:start] + minimize(permute, name, src, text, start, end, body) + text[end:]
             print(f"{name}: written to {src}")
         open(src, "w", encoding="utf-8", newline="").write(done)
 
