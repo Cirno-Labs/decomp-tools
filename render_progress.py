@@ -24,11 +24,9 @@ matched comes from OLD, an earlier rendering, and the names from DIR's
 config/symbols.csv. tools/rename.py uses it to redraw past commits.
 """
 import csv
-import glob
 import html
 import os
 import re
-import struct
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -757,82 +755,77 @@ class ProgressSVG(Container):
 
 class ExeStats(TypedDict):
     code: int
-    game: int
-    red: int
-    library: int
+    library: tuple[int, int]
     libraries: int
     unknown: int
+    text: tuple[int, int]
+    data: tuple[int, int]
+    file: tuple[int, int]
     globals: int
-    defined: int
-    data: int
-    data_defined: int
-    data_unsized: int
-    objects_unread: int
+    placed: int
+    unmapped: int
 
 
-def exe_stats(root: str, functions: list[Symbol]) -> ExeStats:
-    """The whole original exe's code and data: game code by
-    the compare, library code after game.game_end, code no row covers
-    (padding left out), and the data rows, counted as defined when an
-    object in exe.obj_dir defines them."""
-    import coff
-    image = coff.Image(os.path.join(root, project.config["game"]["original"]))
-    text = (0, 0)
-    with open(os.path.join(root, project.config["game"]["original"]), "rb") as handle:
-        data = handle.read()
-    pe = int.from_bytes(data[0x3C:0x40], "little")
-    nsec = int.from_bytes(data[pe + 6:pe + 8], "little")
-    optsz = int.from_bytes(data[pe + 20:pe + 22], "little")
-    base = int.from_bytes(data[pe + 52:pe + 56], "little")
-    for n in range(nsec):
-        h = pe + 24 + optsz + 40 * n
-        flags = int.from_bytes(data[h + 36:h + 40], "little")
-        if flags & 0x20:
-            va = base + int.from_bytes(data[h + 12:h + 16], "little")
-            text = (va, va + int.from_bytes(data[h + 8:h + 12], "little"))
-            break
+def exe_stats(root: str) -> ExeStats | None:
+    """The built exe against the original: identical bytes in .text,
+    in the initialized .rdata and .data, and in the whole file; the
+    library functions (after game.game_end) identical at their original
+    address, the bytes no symbols.csv row covers (padding left out); and how many of
+    its globals our link map lists sit at their original address. None
+    when the exe or its map is not built."""
+    import compare_exe
+    ours_path = os.path.join(root, compare_exe.OURS)
+    map_path = os.path.join(root, compare_exe.MAP)
+    if not (os.path.exists(ours_path) and os.path.exists(map_path)):
+        return None
+    ours = compare_exe.PE(ours_path)
+    orig = compare_exe.PE(os.path.join(root, compare_exe.ORIGINAL))
+
+    def section(names: tuple[str, ...]) -> tuple[int, int]:
+        n = t = 0
+        for name in names:
+            if name in ours.sections and name in orig.sections:
+                va, vsize, rawptr, rawsize = ours.sections[name]
+                _, vsizeb, rawptrb, rawsizeb = orig.sections[name]
+                a = ours.data[rawptr:rawptr + min(vsize, rawsize)]
+                b = orig.data[rawptrb:rawptrb + min(vsizeb, rawsizeb)]
+                n += compare_exe.same(a, b)
+                t += max(len(a), len(b))
+        return n, t
+
+    lo, vsize, _, _ = orig.sections[".text"]
+    hi = lo + vsize
     with open(os.path.join(root, "config/symbols.csv")) as f:
         rows = list(csv.DictReader(f))
-    lo, hi = text
-    code_rows = sorted((int(r["address"], 16), int(r["size"] or 0)) for r in rows if lo <= int(r["address"], 16) < hi)
+    code_rows = [(int(r["address"], 16), int(r["size"] or 0)) for r in rows if lo <= int(r["address"], 16) < hi]
     library = [(a, s) for a, s in code_rows if a >= GAME_END]
     covered = bytearray(hi - lo)
     for a, s in code_rows:
         covered[a - lo:a - lo + s] = b"\1" * min(s, hi - a)
-    blob = image.read(lo, hi - lo)
-    unknown = sum(1 for i, c in enumerate(covered) if not c and blob[i] not in (0x90, 0xCC, 0x00))
-    data_rows = [r for r in rows if not lo <= int(r["address"], 16) < hi]
-    defined = set()
-    objects_unread = 0
-    obj_dir = os.path.join(root, project.config["exe"]["obj_dir"])
-    for path in glob.glob(os.path.join(obj_dir, "**", "*.obj"), recursive=True):
-        try:
-            obj = coff.Object(path)
-        except (OSError, ValueError, IndexError, struct.error):
-            objects_unread += 1
-            continue
-        for sym in obj.externals():
-            if sym.section > 0 and not obj.sections[sym.section - 1].flags & coff.CODE:
-                defined.add(sym.name)
-    done = [r for r in data_rows if any(s in defined for s in r["symbol"].split())]
-    game = [f for f in functions if f.status in (SymbolStatus.NAMED, SymbolStatus.DECOMPILED)]
-    red = [f for f in functions if f.status == SymbolStatus.NONMATCHING]
+    blob = orig.read(lo, hi - lo)
+    ourmap = compare_exe.read_map(map_path)
+    data_rows = [r for r in rows if orig.section_of(int(r["address"], 16)) in (".rdata", ".data")]
+    hits = [next((ourmap[s][0] for s in r["symbol"].split() if s in ourmap), None) for r in data_rows]
+    placed = sum(h == int(r["address"], 16) for h, r in zip(hits, data_rows))
+    unmapped = hits.count(None)  # statics and folded constants the map does not list
     return {
-        "code": hi - lo, "game": sum(f.size for f in game), "red": sum(f.size for f in red),
-        "library": sum(s for a, s in library), "libraries": len(library), "unknown": unknown,
-        "globals": len(data_rows), "defined": len(done),
-        "data_unsized": sum(not r["size"] for r in data_rows),
-        "objects_unread": objects_unread,
-        "data": sum(int(r["size"] or 0) for r in data_rows), "data_defined": sum(int(r["size"] or 0) for r in done),
+        "code": hi - lo,
+        "library": (sum(compare_exe.same(ours.read(a, s), orig.read(a, s)) for a, s in library), sum(s for a, s in library)),
+        "libraries": len(library),
+        "unknown": sum(1 for i, c in enumerate(covered) if not c and blob[i] not in (0x90, 0xCC, 0x00)),
+        "text": section((".text",)), "data": section((".rdata", ".data")),
+        "file": (compare_exe.same(ours.data, orig.data), max(len(ours.data), len(orig.data))),
+        "globals": len(data_rows) - unmapped, "placed": placed, "unmapped": unmapped,
     }
 
 
 def summary(functions: list[Symbol], width: int, data: tuple[int, int] | None = None,
             exe: ExeStats | None = None) -> str:
-    """Function and byte bars with counts; optionally include the whole exe.
+    """One row per measure: a bar, the percentage and the counts behind it.
 
     Solid blocks match, shaded blocks are implemented but nonmatching,
-    and light blocks remain. Exe data counts definitions, not matches.
+    and light blocks remain. The exe rows count bytes identical to the
+    original at the same position.
     """
     done = [f for f in functions if f.status in (SymbolStatus.NAMED, SymbolStatus.DECOMPILED)]
     red = [f for f in functions if f.status == SymbolStatus.NONMATCHING]
@@ -840,40 +833,45 @@ def summary(functions: list[Symbol], width: int, data: tuple[int, int] | None = 
     size = sum(f.size for f in done)
     differ = sum(f.size for f in red)
     count = len(functions) or 1
-    label = len("functions")
-    bar = max(min(40, width - label - 2), 5)
 
-    def line(title: str, matched: int, nonmatching: int, whole: int) -> str:
-        full = round(bar * matched / whole)
-        part = min(round(bar * (matched + nonmatching) / whole), bar) - full
-        return (f"{title:<{label}}  " + "\u2588" * full + "\u2592" * part
-                + "\u2591" * (bar - full - part))
+    def k(n: int) -> str:
+        return f"{n / 1000:.0f}k"
 
+    # (title, matched, nonmatching, whole, matched/whole as text, unit, notes)
     name = project.config["game"]["exe"]
-    counts = (f"{'functions':<{label}}  {100 * len(done) / count:.1f}%  "
-              f"{len(done)}/{len(functions)} match  +{len(red)} nonmatching  ({name})")
-    sizes = (f"{'bytes':<{label}}  {100 * size / total:.1f}%  "
-             f"{size / 1000:.0f}k/{total / 1000:.0f}k match  +{differ / 1000:.0f}k nonmatching")
-    if data:
-        sizes += f"  {data[0]}/{data[1]} data"
-    lines = [line("functions", len(done), len(red), count), line("bytes", size, differ, total)]
+    rows = [("game funcs", len(done), len(red), count, f"{len(done)}/{len(functions)}", "functions",
+             (f"+{len(red)} nonmatching  " if red else "") + name),
+            ("game code", size, differ, total, f"{k(size)}/{k(total)}", "bytes",
+             (f"+{k(differ)} nonmatching" if red else "") + (f"  {data[0]}/{data[1]} data" if data else ""))]
     if exe:
-        lines += [line("exe code", exe["game"], exe["red"], exe["code"] or 1),
-                  line("exe data", 0, exe["data_defined"], exe["data"] or 1)]
-    lines += [counts, sizes]
-    if exe:
-        def k(n: int) -> str:
-            return f"{n / 1000:.0f}k"
-        lines.append(f"{'exe code':<{label}}  {100 * exe['game'] / (exe['code'] or 1):.1f}%  "
-                     f"{k(exe['game'])}/{k(exe['code'])} match  +{k(exe['red'])} nonmatching  "
-                     f"{k(exe['library'])} library ({exe['libraries']})  {k(exe['unknown'])} unknown")
-        data_percent = (f"{100 * exe['data_defined'] / (exe['data'] or 1):.1f}%"
-                        if not exe["objects_unread"] else "partial")
-        lines.append(f"{'exe data':<{label}}  {data_percent}  "
-                     f"{exe['defined']}/{exe['globals']} globals defined  "
-                     f"{k(exe['data_defined'])}/{k(exe['data'])} sized bytes"
-                     + (f"  ({exe['data_unsized']} unsized)" if exe["data_unsized"] else "")
-                     + (f"  ({exe['objects_unread']} objects unread)" if exe["objects_unread"] else ""))
+        n, t = exe["library"]
+        rows.append(("lib code", n, 0, t, f"{k(n)}/{k(t)}", "bytes", f"{exe['libraries']} functions"))
+        n, t = exe["text"]
+        rows.append(("exe code", n, 0, t, f"{k(n)}/{k(t)}", "bytes",
+                     f"{k(exe['unknown'])} not in symbols.csv" if exe["unknown"] else ""))
+        n, t = exe["data"]
+        rows.append(("exe data", n, 0, t, f"{k(n)}/{k(t)}", "bytes",
+                     f"{exe['placed']}/{exe['globals']} globals in place"
+                     + (f"  {exe['unmapped']} not in the map" if exe["unmapped"] else "")))
+        n, t = exe["file"]
+        rows.append(("exe file", n, 0, t, f"{k(n)}/{k(t)}", "bytes", f"{t - n} bytes differ" if t > n else ""))
+    widths = [max(len(r[i]) for r in rows) for i in (0, 4)]
+    text = widths[0] + 2 + 8 + max(len(f"  {r[4]:>{widths[1]}} {r[5]}  {r[6]}".rstrip()) for r in rows)
+    bar = max(min(40, width - 1 - text), 10)  # as wide as the terminal allows
+    dim, plain = ("\033[2m", "\033[0m") if sys.stdout.isatty() else ("", "")
+
+    def cells(n: int, whole: int) -> int:
+        c = min(round(bar * n / whole), bar)
+        return c - 1 if c == bar and n < whole else c  # keep a gap visible until it is all done
+
+    lines = []
+    for title, matched, nonmatching, whole, ratio, unit, notes in rows:
+        whole = whole or 1
+        full = cells(matched, whole)
+        part = cells(matched + nonmatching, whole) - full
+        lines.append(f"{title:<{widths[0]}}  " + "\u2588" * full + "\u2592" * part
+                     + "\u2591" * (bar - full - part) + f"  {100 * matched / whole:5.1f}%"
+                     + dim + f"  {ratio:>{widths[1]}} {unit}  {notes}".rstrip() + plain)
     return "\n".join(lines)
 
 
@@ -893,7 +891,7 @@ def main() -> None:
     functions = collect_functions(root, built_svg)
     with open(output, "w") as handle:
         print(ProgressSVG(functions).render(), file=handle)
-    exe = exe_stats(root, functions) if built_svg is None else None
+    exe = exe_stats(root) if built_svg is None else None
     print(summary(functions, shutil.get_terminal_size((100, 24)).columns, exe=exe))
 
 
