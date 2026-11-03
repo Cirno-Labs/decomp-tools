@@ -767,6 +767,7 @@ class ExeStats(TypedDict):
     data: int
     data_defined: int
     data_unsized: int
+    objects_unread: int
 
 
 def exe_stats(root: str, functions: list[Symbol]) -> ExeStats:
@@ -802,11 +803,13 @@ def exe_stats(root: str, functions: list[Symbol]) -> ExeStats:
     unknown = sum(1 for i, c in enumerate(covered) if not c and blob[i] not in (0x90, 0xCC, 0x00))
     data_rows = [r for r in rows if not lo <= int(r["address"], 16) < hi]
     defined = set()
+    objects_unread = 0
     obj_dir = os.path.join(root, project.config["exe"]["obj_dir"])
     for path in glob.glob(os.path.join(obj_dir, "**", "*.obj"), recursive=True):
         try:
             obj = coff.Object(path)
         except (OSError, ValueError, IndexError, struct.error):
+            objects_unread += 1
             continue
         for sym in obj.externals():
             if sym.section > 0 and not obj.sections[sym.section - 1].flags & coff.CODE:
@@ -819,6 +822,7 @@ def exe_stats(root: str, functions: list[Symbol]) -> ExeStats:
         "library": sum(s for a, s in library), "libraries": len(library), "unknown": unknown,
         "globals": len(data_rows), "defined": len(done),
         "data_unsized": sum(not r["size"] for r in data_rows),
+        "objects_unread": objects_unread,
         "data": sum(int(r["size"] or 0) for r in data_rows), "data_defined": sum(int(r["size"] or 0) for r in done),
     }
 
@@ -863,10 +867,13 @@ def summary(functions: list[Symbol], width: int, data: tuple[int, int] | None = 
         lines.append(f"{'exe code':<{label}}  {100 * exe['game'] / (exe['code'] or 1):.1f}%  "
                      f"{k(exe['game'])}/{k(exe['code'])} match  +{k(exe['red'])} nonmatching  "
                      f"{k(exe['library'])} library ({exe['libraries']})  {k(exe['unknown'])} unknown")
-        lines.append(f"{'exe data':<{label}}  {100 * exe['data_defined'] / (exe['data'] or 1):.1f}%  "
+        data_percent = (f"{100 * exe['data_defined'] / (exe['data'] or 1):.1f}%"
+                        if not exe["objects_unread"] else "partial")
+        lines.append(f"{'exe data':<{label}}  {data_percent}  "
                      f"{exe['defined']}/{exe['globals']} globals defined  "
                      f"{k(exe['data_defined'])}/{k(exe['data'])} sized bytes"
-                     + (f"  ({exe['data_unsized']} unsized)" if exe["data_unsized"] else ""))
+                     + (f"  ({exe['data_unsized']} unsized)" if exe["data_unsized"] else "")
+                     + (f"  ({exe['objects_unread']} objects unread)" if exe["objects_unread"] else ""))
     return "\n".join(lines)
 
 
