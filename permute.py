@@ -995,7 +995,7 @@ class Scorer:
                 + 1000 * broken)
 
 
-    def hot_lines(self, variant):
+    def hot_lines(self, variant: tuple[str, str, str]) -> set[int]:
         """The lines of `variant`'s body, counted from 0, that compile to
         instructions differing from the original's, from the line
         numbers /Zd records. /Zd doesn't change the code, but its .bf and
@@ -1030,9 +1030,9 @@ class Scorer:
         first = variant[0].count("\n")
         lines = set()
         for at in bad:
-            line = max((n for va, n in table if va <= at), default=None)
-            if line is not None:
-                lines.add(line - 1 - first)
+            entry = max(((va, n) for va, n in table if va <= at), default=None)
+            if entry is not None:
+                lines.add(entry[1] - 1 - first)
         return {n for n in lines if n >= 0}
 
 
