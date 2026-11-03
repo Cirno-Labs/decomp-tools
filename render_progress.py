@@ -12,8 +12,10 @@ config/symbols.csv, limited to the game code; their status from the build:
 - nonmatching: defined in src/, not matching yet
 - todo:        everything else
 
-Run it after a build (`just progress` does both). It prints one line: a
-bar of the bytes matched, and how many functions and bytes match.
+Run it after a build (`just progress` does both). The CLI reports
+function and byte bars, including implemented but nonmatching code, and
+whole-executable code and data counts. Data counts definitions, not
+byte matches. Historical SVG renders report only their function status.
 
     render_progress.py --from-svg OLD [--root DIR] [OUTPUT]
 
@@ -22,16 +24,18 @@ matched comes from OLD, an earlier rendering, and the names from DIR's
 config/symbols.csv. tools/rename.py uses it to redraw past commits.
 """
 import csv
+import glob
 import html
 import os
 import re
+import struct
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum, auto
 from itertools import groupby
-from typing import Any
+from typing import Any, TypedDict
 
 import compare
 import project
@@ -751,18 +755,119 @@ class ProgressSVG(Container):
         )
 
 
-def summary(functions: list[Symbol], width: int) -> str:
-    """One line: a bar of the bytes matched, and the counts, no wider
-    than `width`."""
+class ExeStats(TypedDict):
+    code: int
+    game: int
+    red: int
+    library: int
+    libraries: int
+    unknown: int
+    globals: int
+    defined: int
+    data: int
+    data_defined: int
+    data_unsized: int
+
+
+def exe_stats(root: str, functions: list[Symbol]) -> ExeStats:
+    """The whole original exe's code and data: game code by
+    the compare, library code after game.game_end, code no row covers
+    (padding left out), and the data rows, counted as defined when an
+    object in exe.obj_dir defines them."""
+    import coff
+    image = coff.Image(os.path.join(root, project.config["game"]["original"]))
+    text = (0, 0)
+    with open(os.path.join(root, project.config["game"]["original"]), "rb") as handle:
+        data = handle.read()
+    pe = int.from_bytes(data[0x3C:0x40], "little")
+    nsec = int.from_bytes(data[pe + 6:pe + 8], "little")
+    optsz = int.from_bytes(data[pe + 20:pe + 22], "little")
+    base = int.from_bytes(data[pe + 52:pe + 56], "little")
+    for n in range(nsec):
+        h = pe + 24 + optsz + 40 * n
+        flags = int.from_bytes(data[h + 36:h + 40], "little")
+        if flags & 0x20:
+            va = base + int.from_bytes(data[h + 12:h + 16], "little")
+            text = (va, va + int.from_bytes(data[h + 8:h + 12], "little"))
+            break
+    with open(os.path.join(root, "config/symbols.csv")) as f:
+        rows = list(csv.DictReader(f))
+    lo, hi = text
+    code_rows = sorted((int(r["address"], 16), int(r["size"] or 0)) for r in rows if lo <= int(r["address"], 16) < hi)
+    library = [(a, s) for a, s in code_rows if a >= GAME_END]
+    covered = bytearray(hi - lo)
+    for a, s in code_rows:
+        covered[a - lo:a - lo + s] = b"\1" * min(s, hi - a)
+    blob = image.read(lo, hi - lo)
+    unknown = sum(1 for i, c in enumerate(covered) if not c and blob[i] not in (0x90, 0xCC, 0x00))
+    data_rows = [r for r in rows if not lo <= int(r["address"], 16) < hi]
+    defined = set()
+    obj_dir = os.path.join(root, project.config["exe"]["obj_dir"])
+    for path in glob.glob(os.path.join(obj_dir, "**", "*.obj"), recursive=True):
+        try:
+            obj = coff.Object(path)
+        except (OSError, ValueError, IndexError, struct.error):
+            continue
+        for sym in obj.externals():
+            if sym.section > 0 and not obj.sections[sym.section - 1].flags & coff.CODE:
+                defined.add(sym.name)
+    done = [r for r in data_rows if any(s in defined for s in r["symbol"].split())]
+    game = [f for f in functions if f.status in (SymbolStatus.NAMED, SymbolStatus.DECOMPILED)]
+    red = [f for f in functions if f.status == SymbolStatus.NONMATCHING]
+    return {
+        "code": hi - lo, "game": sum(f.size for f in game), "red": sum(f.size for f in red),
+        "library": sum(s for a, s in library), "libraries": len(library), "unknown": unknown,
+        "globals": len(data_rows), "defined": len(done),
+        "data_unsized": sum(not r["size"] for r in data_rows),
+        "data": sum(int(r["size"] or 0) for r in data_rows), "data_defined": sum(int(r["size"] or 0) for r in done),
+    }
+
+
+def summary(functions: list[Symbol], width: int, data: tuple[int, int] | None = None,
+            exe: ExeStats | None = None) -> str:
+    """Function and byte bars with counts; optionally include the whole exe.
+
+    Solid blocks match, shaded blocks are implemented but nonmatching,
+    and light blocks remain. Exe data counts definitions, not matches.
+    """
     done = [f for f in functions if f.status in (SymbolStatus.NAMED, SymbolStatus.DECOMPILED)]
+    red = [f for f in functions if f.status == SymbolStatus.NONMATCHING]
     total = sum(f.size for f in functions) or 1
     size = sum(f.size for f in done)
-    tail = (f" {100 * size / total:.1f}%  {len(done)}/{len(functions)} functions  "
-            f"{size / 1000:.0f}k/{total / 1000:.0f}k bytes")
-    head = f"{project.config['game']['exe']}  "
-    bar = max(min(20, width - len(head) - len(tail)), 5)
-    full = round(bar * size / total)
-    return head + "\u2588" * full + "\u2591" * (bar - full) + tail
+    differ = sum(f.size for f in red)
+    count = len(functions) or 1
+    label = len("functions")
+    bar = max(min(40, width - label - 2), 5)
+
+    def line(title: str, matched: int, nonmatching: int, whole: int) -> str:
+        full = round(bar * matched / whole)
+        part = min(round(bar * (matched + nonmatching) / whole), bar) - full
+        return (f"{title:<{label}}  " + "\u2588" * full + "\u2592" * part
+                + "\u2591" * (bar - full - part))
+
+    name = project.config["game"]["exe"]
+    counts = (f"{'functions':<{label}}  {100 * len(done) / count:.1f}%  "
+              f"{len(done)}/{len(functions)} match  +{len(red)} nonmatching  ({name})")
+    sizes = (f"{'bytes':<{label}}  {100 * size / total:.1f}%  "
+             f"{size / 1000:.0f}k/{total / 1000:.0f}k match  +{differ / 1000:.0f}k nonmatching")
+    if data:
+        sizes += f"  {data[0]}/{data[1]} data"
+    lines = [line("functions", len(done), len(red), count), line("bytes", size, differ, total)]
+    if exe:
+        lines += [line("exe code", exe["game"], exe["red"], exe["code"] or 1),
+                  line("exe data", 0, exe["data_defined"], exe["data"] or 1)]
+    lines += [counts, sizes]
+    if exe:
+        def k(n: int) -> str:
+            return f"{n / 1000:.0f}k"
+        lines.append(f"{'exe code':<{label}}  {100 * exe['game'] / (exe['code'] or 1):.1f}%  "
+                     f"{k(exe['game'])}/{k(exe['code'])} match  +{k(exe['red'])} nonmatching  "
+                     f"{k(exe['library'])} library ({exe['libraries']})  {k(exe['unknown'])} unknown")
+        lines.append(f"{'exe data':<{label}}  {100 * exe['data_defined'] / (exe['data'] or 1):.1f}%  "
+                     f"{exe['defined']}/{exe['globals']} globals defined  "
+                     f"{k(exe['data_defined'])}/{k(exe['data'])} sized bytes"
+                     + (f"  ({exe['data_unsized']} unsized)" if exe["data_unsized"] else ""))
+    return "\n".join(lines)
 
 
 def main() -> None:
@@ -781,7 +886,8 @@ def main() -> None:
     functions = collect_functions(root, built_svg)
     with open(output, "w") as handle:
         print(ProgressSVG(functions).render(), file=handle)
-    print(summary(functions, shutil.get_terminal_size((100, 24)).columns))
+    exe = exe_stats(root, functions) if built_svg is None else None
+    print(summary(functions, shutil.get_terminal_size((100, 24)).columns, exe=exe))
 
 
 if __name__ == "__main__":
