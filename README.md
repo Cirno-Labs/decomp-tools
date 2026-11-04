@@ -72,7 +72,7 @@ just tools-init hooks
 | `decompile [ADDR...]` | write Ghidra's pseudocode to `build/decomp/` |
 | `permute NAME [ARGS]` | search source variants of a function for a byte match (see [The permuter](#the-permuter)) |
 | `farm [ARGS]` | permute every `hooks.allow_diff` function unattended, several at once |
-| `progress` | render `docs/progress.svg` |
+| `progress` | build, then render `docs/progress.svg` |
 | `hooks` | use `tools/hooks/`: 50/72 commit messages without type prefixes or trailers, with `hooks.compare` only matching functions besides `hooks.allow_diff`, and with `hooks.progress` a progress image in every commit |
 | `clean` | remove build outputs (keeps the Ghidra project) |
 
