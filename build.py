@@ -53,6 +53,8 @@ build.hook names a Python file with the game's own steps. It may define:
                           instead of the original's
     exe_objects(objs, feats)  prepare the ordered objects before linking;
                              returns the objects to pass to the linker
+    exe_finished(feats)   finish the linked executable after header fields
+                          have been copied
 """
 import collections, csv, glob, importlib.util, json, os, struct, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -428,6 +430,9 @@ def link_exe(objs, exe_objs=None, feats=()):
     tool("link", *EXE_CONFIG["ldflags"], "/MAP:" + win(EXE_MAP), "/OUT:" + win(EXE),
          *map(win, ordered), win(res), *EXE_CONFIG["libs"])
     copy_header_fields(ORIGINAL, EXE)
+    finish = hook("exe_finished")
+    if finish:
+        finish(list(feats))
     print("linked", EXE)
 
 
