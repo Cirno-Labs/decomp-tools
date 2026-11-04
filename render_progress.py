@@ -892,8 +892,17 @@ def main() -> None:
     output = args[0] if args else os.path.join(root, "docs/progress.svg")
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     functions = collect_functions(root, built_svg)
-    with open(output, "w") as handle:
-        print(ProgressSVG(functions).render(), file=handle)
+    # Write beside the target and rename over it, so a viewer refreshing
+    # mid-write never reads a half-written image.
+    partial = f"{output}.{os.getpid()}.tmp"
+    try:
+        with open(partial, "w") as handle:
+            print(ProgressSVG(functions).render(), file=handle)
+        os.replace(partial, output)
+    except BaseException:
+        if os.path.exists(partial):
+            os.remove(partial)
+        raise
     exe = exe_stats(root) if built_svg is None else None
     print(summary(functions, shutil.get_terminal_size((100, 24)).columns, exe=exe))
 
