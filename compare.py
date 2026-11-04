@@ -66,10 +66,14 @@ def compiled_functions(symbols):
             # labels (storage class 6), MSVC 7.1 at /O2 as statics named
             # $L... A switch's jump table also starts at a $L static, the
             # one the function's own code refers to before it, and the
-            # function ends there.
+            # function ends there. A table holds addresses, so a relocation
+            # sits at its start: a catch block's continuation, which the
+            # code also refers to (mov eax, offset $L...), has none.
+            relocated = {off for off, _, _ in sec.relocs}
             tables = {obj.symbols[i].name for off, i, _ in sec.relocs
                       if sym.value <= off and obj.symbols[i].section == sym.section
-                      and obj.symbols[i].value > off}
+                      and obj.symbols[i].value > off
+                      and obj.symbols[i].value in relocated}
             starts = sorted(s.value for s in obj.symbols
                             if s and s.section == sym.section and s.value > sym.value
                             and s.storage != LABEL
