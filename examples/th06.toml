@@ -35,3 +35,6 @@ english = "FEAT_ENGLISH"
 
 [psdk]
 libs = ["Gdi32.Lib", "Kernel32.Lib", "User32.Lib", "Uuid.Lib", "WinMM.Lib"]
+
+[replay]
+hook = "scripts/replay_hook.py"  # tools/replay/replay.py's: the T6RP format, what the tracer patches

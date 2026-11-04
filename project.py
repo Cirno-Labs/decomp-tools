@@ -70,6 +70,9 @@ DEFAULTS = {
     "symbols": {
         "import_libs": [".wine/drive_c/psdk/Lib", ".wine/drive_c/dx8/lib"],
     },
+    "replay": {
+        "hook": "",  # the game's replay hook for replay/replay.py, a Python file
+    },
     "hooks": {
         "progress": False,  # pre-commit redraws docs/progress.svg
         "compare": False,  # pre-commit fails unless every compiled function matches (gate.py)

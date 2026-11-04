@@ -67,6 +67,7 @@ just tools-init hooks
 | `run [STEP...]` | run the patched game headless (`wait:S key:K hold:K:S shot:NAME`) |
 | `exe [STEP...]` | link the standalone `build/<name>.exe`; `FEAT=a,b` turns on features |
 | `compare-exe [-v]` | compare the standalone exe with the original, section by section |
+| `replay [RPY...]` | play replays to their end headless in the original, twice, and the standalone exe, and compare every calculation (`replay/replay.py`, with `replay.hook`) |
 | `psdk-libs ZIP` | extract VS.NET 2002's Platform SDK import libraries from its install media |
 | `analyze` | analyze the original with headless Ghidra, seed `config/symbols.csv` |
 | `decompile [ADDR...]` | write Ghidra's pseudocode to `build/decomp/` |
@@ -186,7 +187,7 @@ written as such (`0x46004B`). `DECOMP_PROJECT` names another file.
 
 The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 
-### `[psdk]`, `[symbols]`, `[hooks]`
+### `[psdk]`, `[symbols]`, `[hooks]`, `[replay]`
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -195,6 +196,7 @@ The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 | `hooks.progress` | `false` | the pre-commit hook redraws `docs/progress.svg` and adds it |
 | `hooks.compare` | `false` | the pre-commit hook fails unless every compiled function matches the original, or `hooks.allow_diff` lists it |
 | `hooks.allow_diff` | `[]` | functions, by their `symbols.csv` name, that are in `src/` though they don't match yet; `farm` permutes these |
+| `replay.hook` | none | the game's Python file for `replay/replay.py`: its replay format, what its tracer patches and reads, and the run's setup (`replay.py` documents it) |
 
 With `hooks.compare`, the pre-commit hook builds `src/` and runs the
 comparison (`gate.py`); `src/` and `config/` may then have no unstaged

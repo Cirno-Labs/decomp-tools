@@ -45,6 +45,11 @@ exe *steps: game
 compare-exe *args: _orig
     python3 tools/compare_exe.py "$@"
 
+# Play REPLAYs (default: all of replays/) to their end in the original, twice, and build/<name>.exe, and compare every calculation (replay.hook)
+[positional-arguments]
+replay *args: _orig
+    python3 tools/replay/replay.py check "$@"
+
 # Extract VS.NET 2002's Platform SDK import libraries from its install ZIP
 psdk-libs zip:
     python3 tools/psdk_libs.py {{ quote(zip) }}
