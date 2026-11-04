@@ -21,8 +21,8 @@ draws nothing and the clock runs as fast as the game does (trace.h).
 
 A run passes when the replay ends by itself and the game gets back to
 the title, plays the replay's stages in order, ends each with the score
-the replay recorded and after exactly its recorded frames, with the
-replay's frame counter going up by one at each calculation of a stage
+the replay recorded and at its format's complete-input endpoint, with
+the replay's frame counter going up by one at each calculation of a stage
 and the game's own calculation counter at each calculation; plus the
 hook's checks. `check` runs every executable of each replay at the
 same time (the original twice, and the standalone exe, by default) and
@@ -50,6 +50,7 @@ import argparse, csv, datetime, glob, hashlib, html, importlib.util, json, os, q
 import subprocess, sys, time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Mapping
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
@@ -68,13 +69,17 @@ HOOK = """The game's replay hook, replay.hook in project.toml, defines:
     TRACER      the tracer's sources, from the repository's root
     FUNCTIONS   {name: symbol} of the functions the tracer patches, and
     GLOBALS     {name: symbol} of the data it reads: TRACE_ADDR gives it
-                each name's address, from symbols.csv or the build's map
+                each name's address, from symbols.csv or the build's map; a
+                tuple gives alternative mangled names, tried in order
     SIZED       names whose sizes TRACE_ADDR also gives, as <name>Size
     WR_TABLE    the game's table on Maribel Hearn's page ("EoSD_table")
     Replay      a class: Replay(path) reads a replay or raises
                 ValueError; .label is "<shot> <difficulty>" as the table
                 names them, .score the final score, .stages {stage:
-                {"score": ..., "frames": ...}} in the order played, and
+                {"score": ..., "frames": ...}} in the order played;
+                optional "frame_counts" lists the format's permitted
+                playback endpoints when its final recorded input is
+                redundant (defaults to the single "frames" value), and
                 .describe() lines for `info`
     setup(game_dir, replay)
                 writes the game's configuration and the replay into the
@@ -102,8 +107,10 @@ def hook():
         if not path:
             sys.exit("project.toml has no replay.hook\n\n" + HOOK)
         spec = importlib.util.spec_from_file_location("replay_hook", os.path.join(ROOT, path))
-        _hook = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(_hook)
+        loaded = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loaded)
+        # Parallel run() callers must never see a partially loaded hook.
+        _hook = loaded
     return _hook
 
 
@@ -185,13 +192,15 @@ def map_symbols(path):
     return {s: (a, following.get(a, a) - a) for s, a in addrs.items()}
 
 
-def resolve(symbols):
-    """TRACE_ADDR's value from a symbol table."""
+def resolve(symbols: Mapping[str, tuple[int, int | None]]) -> str:
+    """TRACE_ADDR's value, accepting ordered alternative symbol names."""
     parts = []
     h = hook()
-    for name, sym in {**h.FUNCTIONS, **h.GLOBALS}.items():
-        if sym not in symbols:
-            sys.exit(f"no {sym} in the symbols")
+    for name, spelling in {**h.FUNCTIONS, **h.GLOBALS}.items():
+        alternatives = (spelling,) if isinstance(spelling, str) else spelling
+        sym = next((candidate for candidate in alternatives if candidate in symbols), None)
+        if sym is None:
+            sys.exit(f"no {' or '.join(alternatives)} in the symbols for {name}")
         addr, size = symbols[sym]
         parts.append(f"{name}={addr:#x}")
         if name in h.SIZED:
@@ -399,7 +408,8 @@ def run(rpy, spec, out_dir, slot=0, speed=0, render=False, show=False, timeout=3
         xvfb.wait()
     summary = dict(replay=os.path.relpath(rpy, ROOT), replay_sha1=sha1(rpy), exe=label,
                    exe_path=os.path.relpath(exe, ROOT), exe_sha1=sha1(exe),
-                   patched_sha1=sha1(os.path.join(game, name)), tracer_sha1=sha1(TRACER), speed=speed,
+                   patched_sha1=sha1(os.path.join(game, name)),
+                   tracer_sha1=sha1(os.path.join(game, os.path.basename(TRACER))), speed=speed,
                    render=render, exit_code=code, stuck=stuck, seconds=round(seconds, 1))
     if os.path.exists(trace):
         summary["trace_sha1"] = sha1(trace)
@@ -421,39 +431,47 @@ def run(rpy, spec, out_dir, slot=0, speed=0, render=False, show=False, timeout=3
 # Traces
 
 class Trace:
-    def __init__(self, fields, info, records):
+    def __init__(self, fields: list[str], info: str, records: list[tuple[int, ...]]) -> None:
         self.fields = fields
         self.info = info
         self.records = records
         self.index = {f: i for i, f in enumerate(fields)}
 
-    def get(self, record, field):
+    def get(self, record: tuple[int, ...], field: str) -> int:
         return record[self.index[field]]
 
-    def of(self, kind):
+    def of(self, kind: int) -> list[tuple[int, ...]]:
         k = self.index["kind"]
         return [r for r in self.records if r[k] == kind]
 
 
-def read_trace(path):
+def read_trace(path: str | os.PathLike[str]) -> Trace:
     with open(path, "rb") as f:
         data = f.read()
+    if len(data) < 16:
+        raise ValueError(f"{path}: truncated trace header")
     magic, version, count, size = struct.unpack_from("<4sIII", data)
-    if magic != b"TRCE" or version != 1 or size != count * 4:
+    if magic != b"TRCE" or version != 1 or not count or size != count * 4:
         raise ValueError(f"{path}: not a version 1 trace")
     at = 16
     fields = []
-    for _ in range(count + 1):
-        end = data.index(b"\n", at)
-        fields.append(data[at:end].decode("ascii"))
-        at = end + 1
+    try:
+        for _ in range(count + 1):
+            end = data.index(b"\n", at)
+            fields.append(data[at:end].decode("ascii"))
+            at = end + 1
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError(f"{path}: invalid trace field header") from exc
     info = fields.pop()
+    if any(not field for field in fields) or len(set(fields)) != len(fields):
+        raise ValueError(f"{path}: empty or duplicate trace fields")
     missing = [f for f in REQUIRED_FIELDS if f not in fields]
     if missing:
         raise ValueError(f"{path}: no {', '.join(missing)} fields")
     body = data[at:]
-    usable = len(body) - len(body) % size
-    return Trace(fields, info, list(struct.iter_unpack(f"<{count}I", body[:usable])))
+    if len(body) % size:
+        raise ValueError(f"{path}: truncated trace record ({len(body) % size} trailing bytes)")
+    return Trace(fields, info, list(struct.iter_unpack(f"<{count}I", body)))
 
 
 def validate(replay, trace):
@@ -501,9 +519,11 @@ def validate(replay, trace):
             if get(end, "score") != recorded["score"]:
                 failures.append(f"stage {stage}: ended with {get(end, 'score')}, the replay recorded "
                                 f"{recorded['score']}")
-            if not frames or frames[-1] != recorded["frames"]:
+            frame_counts = recorded.get("frame_counts", [recorded["frames"]])
+            if not frames or frames[-1] not in frame_counts:
+                expected = " or ".join(map(str, frame_counts))
                 failures.append(f"stage {stage}: played {frames[-1] if frames else 0} frames, the replay "
-                                f"has {recorded['frames']}")
+                                f"requires {expected}")
             elif stage_failures:
                 failures += [f"stage {stage}: {f}" for f in stage_failures(stage, recorded, in_stage[-1], end, get)]
         stages.append(result)
@@ -520,7 +540,7 @@ def validate(replay, trace):
                 final_score=get(ends[-1], "score") if ends else None)
 
 
-def compare(a, b):
+def compare(a: Trace, b: Trace) -> dict[str, Any]:
     """Compares two traces record by record. Returns the results, with
     the first records that differ."""
     if a.fields != b.fields:
@@ -531,7 +551,7 @@ def compare(a, b):
             ra, rb = a.records[i], b.records[i]
             fields = {f: [ra[j], rb[j]] for j, f in enumerate(a.fields) if ra[j] != rb[j]}
             return dict(identical=False, compared=i, values=i * len(a.fields),
-                        first_difference=dict(record=i, kind=KIND_NAMES.get(ra[0], ra[0]),
+                        first_difference=dict(record=i, kind=KIND_NAMES.get(a.get(ra, "kind"), a.get(ra, "kind")),
                                               stage=a.get(ra, "stage"), replay_frame=a.get(ra, "replayFrame"),
                                               fields=fields))
     if len(a.records) != len(b.records):

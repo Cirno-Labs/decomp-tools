@@ -1,0 +1,69 @@
+"""Trace integrity checks; run with unittest discover -s tools/replay."""
+from __future__ import annotations
+
+import os
+import struct
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import replay
+
+
+class TraceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "trace.bin"
+
+    def trace_bytes(self, fields: list[str] | None = None) -> bytes:
+        fields = replay.REQUIRED_FIELDS if fields is None else fields
+        header = struct.pack("<4sIII", b"TRCE", 1, len(fields), 4 * len(fields))
+        names = ("\n".join(fields) + "\ninstalled\n").encode("ascii")
+        record = tuple(replay.TITLE if field == "kind" else 0 for field in fields)
+        return header + names + struct.pack(f"<{len(fields)}I", *record)
+
+    def read(self, data: bytes) -> replay.Trace:
+        self.path.write_bytes(data)
+        return replay.read_trace(self.path)
+
+    def test_complete_trace(self) -> None:
+        trace = self.read(self.trace_bytes())
+        self.assertEqual(trace.info, "installed")
+        self.assertEqual(len(trace.of(replay.TITLE)), 1)
+
+    def test_partial_record_is_rejected_even_after_title(self) -> None:
+        # Previously discarded silently, allowing a corrupt trace to match.
+        with self.assertRaisesRegex(ValueError, "truncated trace record"):
+            self.read(self.trace_bytes() + b"\x01")
+
+    def test_truncated_headers(self) -> None:
+        for data in (b"", b"TRCE", self.trace_bytes()[:20]):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                self.read(data)
+
+    def test_zero_width_record(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not a version 1 trace"):
+            self.read(struct.pack("<4sIII", b"TRCE", 1, 0, 0))
+
+    def test_duplicate_fields(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            self.read(self.trace_bytes(replay.REQUIRED_FIELDS + ["score"]))
+
+    def test_missing_required_field(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no score"):
+            self.read(self.trace_bytes(replay.REQUIRED_FIELDS[:-1]))
+
+    def test_kind_is_resolved_by_name(self) -> None:
+        fields = ["score", *replay.REQUIRED_FIELDS[:-1]]
+        left = self.read(self.trace_bytes(fields))
+        right = replay.Trace(fields, left.info, [tuple(1 if field == "score" else value
+                            for field, value in zip(fields, left.records[0]))])
+        result = replay.compare(left, right)
+        self.assertEqual(result["first_difference"]["kind"], "title")
+
+
+if __name__ == "__main__":
+    unittest.main()
