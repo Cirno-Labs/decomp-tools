@@ -47,7 +47,13 @@ class Object:
             size, rawptr, relptr, _, nrel, _, flags = struct.unpack_from("<IIIIHHI", d, h + 16)
             data = d[rawptr:rawptr + size] if rawptr else bytes(size)
             relocs = [struct.unpack_from("<IIH", d, relptr + r * 10) for r in range(nrel)]
-            self.sections.append(Section(name(d[h:h + 8]), data, relocs, flags))
+            rawname = d[h:h + 8].rstrip(b"\0")
+            if rawname.startswith(b"/") and rawname[1:].isdigit():
+                start = strtab + int(rawname[1:])
+                section_name = d[start:d.index(b"\0", start)].decode("latin-1")
+            else:
+                section_name = name(d[h:h + 8])
+            self.sections.append(Section(section_name, data, relocs, flags))
 
     def externals(self):
         return [s for s in self.symbols if s and s.storage == CLASS_EXTERNAL]
@@ -102,10 +108,14 @@ def write_object(path, sections, defined, undefined, absolute):
     index = {n: i for i, (n, _, _) in enumerate(syms)}
 
     ptr = 20 + 40 * len(sections)
-    headers, body = bytearray(), bytearray()
+    headers, body, strings = bytearray(), bytearray(), bytearray()
     for name, flags, data, relocs in sections:
         relptr = ptr + len(data)
-        headers += struct.pack("<8sIIIIIIHHI", name.encode(), 0, 0, len(data),
+        field = name.encode("latin-1")
+        if len(field) > 8:
+            field = ("/" + str(4 + len(strings))).encode("ascii")
+            strings += name.encode("latin-1") + b"\0"
+        headers += struct.pack("<8sIIIIIIHHI", field, 0, 0, len(data),
                                ptr, relptr, 0, len(relocs), 0, flags)
         body += data
         for off, sym, typ in relocs:
@@ -113,7 +123,6 @@ def write_object(path, sections, defined, undefined, absolute):
         ptr = relptr + len(relocs) * 10
     out = bytearray(struct.pack("<HHIIIHH", 0x14C, len(sections), 0, ptr, len(syms), 0, 0))
     out += headers + body
-    strings = bytearray()
     for name, value, secnum in syms:
         raw = name.encode("latin-1")
         if len(raw) <= 8:
