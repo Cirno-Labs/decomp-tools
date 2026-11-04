@@ -51,6 +51,8 @@ build.hook names a Python file with the game's own steps. It may define:
     headers()             more headers whose changes rebuild everything
     exe_resources(feats)  the executable whose resources the exe gets,
                           instead of the original's
+    exe_objects(objs, feats)  prepare the ordered objects before linking;
+                             returns the objects to pass to the linker
 """
 import collections, csv, glob, importlib.util, json, os, struct, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -117,6 +119,7 @@ def hook(name):
             path = os.path.join(ROOT, BUILD["hook"])
             spec = importlib.util.spec_from_file_location("build_hook", path)
             _hook = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = _hook
             spec.loader.exec_module(_hook)
     return getattr(_hook, name, None) if _hook else None
 
@@ -419,6 +422,9 @@ def link_exe(objs, exe_objs=None, feats=()):
     rsrc.write_res(res, rsrc.resources(image))
     linked = dict(zip(objs, exe_objs))
     ordered = [linked[o] for o in link_order(objs, read_symbols(), EXE_CONFIG["link_order"])]
+    prepare = hook("exe_objects")
+    if prepare:
+        ordered = prepare(ordered, list(feats))
     tool("link", *EXE_CONFIG["ldflags"], "/MAP:" + win(EXE_MAP), "/OUT:" + win(EXE),
          *map(win, ordered), win(res), *EXE_CONFIG["libs"])
     copy_header_fields(ORIGINAL, EXE)
