@@ -24,6 +24,7 @@ matched comes from OLD, an earlier rendering, and the names from DIR's
 config/symbols.csv. tools/rename.py uses it to redraw past commits.
 """
 import csv
+import fnmatch
 import html
 import os
 import re
@@ -74,7 +75,8 @@ def built_from_svg(path: str) -> dict[int, bool | None]:
 
 def collect_functions(root: str = ROOT, built_svg: dict[int, bool | None] | None = None) -> list[Symbol]:
     with open(os.path.join(root, "config/symbols.csv")) as f:
-        rows = [r for r in csv.DictReader(f) if int(r["address"], 16) < GAME_END]
+        rows = [r for r in csv.DictReader(f) if int(r["address"], 16) < GAME_END
+                and not any(fnmatch.fnmatchcase(r["name"], g) for g in project.config["game"]["progress_exclude"])]
     if built_svg is None:
         built = {name: same for name, same, *_ in compare.results(compare.read_symbols())}
     functions = []
@@ -100,8 +102,9 @@ def collect_functions(root: str = ROOT, built_svg: dict[int, bool | None] | None
         ))
     for f in functions:
         if not f.size:
-            print(f"warning: no size for {f.signature}", file=sys.stderr)
-    return sorted(functions, key=lambda f: f.offset)
+            print(f"warning: no size for {f.signature}, left out", file=sys.stderr)
+    # A function without a size has no area in the treemap.
+    return sorted((f for f in functions if f.size), key=lambda f: f.offset)
 
 
 DOCUMENT_MARGIN = Decimal(2)

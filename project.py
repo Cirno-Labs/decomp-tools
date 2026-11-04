@@ -31,6 +31,7 @@ DEFAULTS = {
         "original": REQUIRED,  # where its verified copy goes, an ASCII path
         "game_end": REQUIRED,  # the game's code ends here; libraries follow
         "title": "",  # the progress chart's title; defaults to the name
+        "progress_exclude": [],  # name globs of rows no source makes (linker thunks, data), left out of the progress
         "window_title": "",  # play.py looks for a window with this title
         "checksums": "",  # a `sha1sum -c` file, run from its own directory
         "standalone_extras": [],  # globs copied into build/game with the standalone exe

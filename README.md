@@ -140,6 +140,7 @@ written as such (`0x46004B`). `DECOMP_PROJECT` names another file.
 | `game_end` | required | the address the game's code ends at; library code follows |
 | `checksums` | none | a `sha1sum -c` file, run from its own directory |
 | `title` | `name` | the progress image's title |
+| `progress_exclude` | `[]` | name globs of `symbols.csv` rows no source makes, such as linker thunks, left out of the progress |
 | `window_title` | `title` | the window `play.py` looks for |
 | `standalone_extras` | `[]` | globs copied into `build/game/` with the standalone exe |
 
