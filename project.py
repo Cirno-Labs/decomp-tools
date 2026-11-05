@@ -77,6 +77,7 @@ DEFAULTS = {
     "hooks": {
         "progress": False,  # pre-commit redraws docs/progress.svg
         "compare": False,  # pre-commit fails unless every compiled function matches (gate.py)
+        "readme": False,  # pre-commit fails if README.md names a missing path (readme_paths.py)
         "allow_diff": [],  # functions in src/ that may differ, by symbols.csv name; farm.py's default
     },
 }

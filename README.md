@@ -75,7 +75,7 @@ just tools-init hooks
 | `permute NAME [ARGS]` | search source variants of a function for a byte match (see [The permuter](#the-permuter)) |
 | `farm [ARGS]` | permute every `hooks.allow_diff` function unattended, several at once |
 | `progress` | build, then render `docs/progress.svg` |
-| `hooks` | use `tools/hooks/`: 50/72 commit messages without type prefixes or trailers, with `hooks.compare` only matching functions besides `hooks.allow_diff`, and with `hooks.progress` a progress image in every commit |
+| `hooks` | use `tools/hooks/`: 50/72 commit messages without type prefixes or trailers, with `hooks.compare` only matching functions besides `hooks.allow_diff`, with `hooks.readme` only existing paths in `README.md`, and with `hooks.progress` a progress image in every commit |
 | `clean` | remove build outputs (keeps the Ghidra project) |
 
 Compiles run on half the cores; `JOBS` overrides it. Ghidra is found
@@ -120,6 +120,7 @@ puts it on `main` at the same commit.
 | `permute.py` | searches rewrites of one function (declaration, operand and statement order, if/else, loop and condition forms) for a byte match, compiling each variant alone |
 | `farm.py` | runs `permute.py` over every `hooks.allow_diff` function, several at once, unattended; keeps matching bodies in `build/farm/`, and `--apply` writes them into `src/` |
 | `gate.py` | the commit rule `hooks.compare` turns on, for the pre-commit hook |
+| `readme_paths.py` | the commit rule `hooks.readme` turns on: every repository path `README.md` names must exist |
 | `locals.py` | predicts and picks local variable names for a wanted stack layout under `/Od` |
 | `psdk_libs.py`, `msi_extract.py` | extract import libraries from the VS.NET 2002 media |
 | `coff.py`, `rsrc.py`, `peinfo.py` | COFF objects, resources, PE and Rich header |
@@ -196,6 +197,7 @@ The exe's map is `build/<name>_exe.map`, the DLL's `build/<name>.map`.
 | `symbols.import_libs` | `.wine/drive_c/psdk/Lib`, `.wine/drive_c/dx8/lib` | where `seed_symbols.py` looks up decorated import names |
 | `hooks.progress` | `false` | the pre-commit hook redraws `docs/progress.svg` and adds it |
 | `hooks.compare` | `false` | the pre-commit hook fails unless every compiled function matches the original, or `hooks.allow_diff` lists it |
+| `hooks.readme` | `false` | the pre-commit hook fails if `README.md` names a repository path that doesn't exist (gitignored places such as `build/` are skipped) |
 | `hooks.allow_diff` | `[]` | functions, by their `symbols.csv` name, that are in `src/` though they don't match yet; `farm` permutes these |
 | `replay.hook` | none | the game's Python file for `replay/replay.py`: its replay format, what its tracer patches and reads, and the run's setup (`replay.py` documents it) |
 
