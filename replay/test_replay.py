@@ -1,12 +1,16 @@
 """Trace integrity checks; run with unittest discover -s tools/replay."""
 from __future__ import annotations
 
+import io
+import json
 import os
 import struct
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import replay
@@ -63,6 +67,39 @@ class TraceTest(unittest.TestCase):
                             for field, value in zip(fields, left.records[0]))])
         result = replay.compare(left, right)
         self.assertEqual(result["first_difference"]["kind"], "title")
+
+
+class FetchTest(unittest.TestCase):
+    PAGE = ('<table id="X_table"><tr><th>Shottype</th><th>Easy</th><th>Normal</th></tr>'
+            '<tr><td>Border Team</td><td><a href="https://example.org/a.rpy">1</a><br>by <em>P&amp;Q</em>'
+            '<span class="dimgrey"><br>01/02/2003</span></td>'
+            '<td><a href="https://example.org/b.rpy">2</a><br>by <em>R</em></td></tr></table>')
+
+    def test_spaced_shot_names_and_rejected_downloads(self) -> None:
+        class Replay:
+            def __init__(self, path: str) -> None:
+                data = Path(path).read_bytes()
+                if not data:
+                    raise ValueError(f"{path}: empty")
+                self.label, self.score = data.decode(), 10
+
+        files = {"https://maribelhearn.com/wr": self.PAGE.encode(), "https://example.org/a.rpy": b"Border Team Easy",
+                 "https://example.org/b.rpy": b""}
+        hook = SimpleNamespace(WR_TABLE="X_table", Replay=Replay)
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(replay, "REPLAYS", directory), \
+                patch.object(replay, "MANIFEST", os.path.join(directory, "manifest.json")), \
+                patch.object(replay, "hook", return_value=hook), \
+                patch.object(replay.urllib.request, "urlopen", side_effect=lambda r: io.BytesIO(files[r.full_url])), \
+                patch("sys.stdout", io.StringIO()):
+            replay.fetch()
+            manifest = json.loads(Path(directory, "manifest.json").read_text())
+            self.assertEqual(sorted(os.listdir(directory)), ["a.rpy", "manifest.json"])
+        [entry] = manifest["replays"]
+        self.assertEqual((entry["shot"], entry["difficulty"], entry["player"], entry["date"]),
+                         ("Border Team", "Easy", "P&Q", "01/02/2003"))
+        self.assertEqual(manifest["skipped"], [dict(file="b.rpy", shot="Border Team", difficulty="Normal",
+                                                    url="https://example.org/b.rpy", reason="empty")])
 
 
 if __name__ == "__main__":

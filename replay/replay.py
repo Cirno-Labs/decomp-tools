@@ -44,7 +44,9 @@ Options:
 `fetch` downloads the record replays from the hook's WR_TABLE in Maribel
 Hearn's world record table (https://maribelhearn.com/wr) into replays/
 and writes replays/manifest.json: where each came from, by whom, and its
-hash. The players made the replays; keep their provenance.
+hash. A download the hook's Replay rejects (the server may serve an empty
+file) is left out, and listed under "skipped" with why. The players made
+the replays; keep their provenance.
 """
 import argparse, csv, datetime, glob, hashlib, html, importlib.util, json, os, queue, re, shutil, struct
 import subprocess, sys, time
@@ -139,7 +141,10 @@ def fetch():
     columns = re.findall(r"<th>(.*?)</th>", table.group(0))[1:]
     os.makedirs(REPLAYS, exist_ok=True)
     entries = []
-    for shot, cells in re.findall(r"<tr><td>(\w+)</td>(.*?)</tr>", table.group(0), re.S):
+    skipped = []
+    # Shot types may have spaces in their names ("Border Team").
+    for shot, cells in re.findall(r"<tr><td>([^<]+)</td>(.*?)</tr>", table.group(0), re.S):
+        shot = html.unescape(shot).strip()
         for difficulty, cell in zip(columns, re.findall(r"<td[^>]*>(.*?)</td>", cells, re.S)):
             link = re.search(r'href="([^"]+\.rpy)"', cell)
             if not link:
@@ -155,16 +160,26 @@ def fetch():
                     data = r.read()
                 with open(path, "wb") as f:
                     f.write(data)
-            replay = hook().Replay(path)
+            try:
+                replay = hook().Replay(path)
+            except ValueError as exc:
+                # The table may link a file the server no longer has, or
+                # serves empty: keep where it came from, not the file.
+                print(f"skip {url}: {exc}")
+                os.remove(path)
+                skipped.append(dict(file=name, shot=shot, difficulty=difficulty, url=url,
+                                    reason=str(exc).removeprefix(path + ": ")))
+                continue
             if replay.label != f"{shot} {difficulty}":
                 sys.exit(f"{name} is {replay.label}, listed as {shot} {difficulty}")
             entries.append(dict(file=name, shot=shot, difficulty=difficulty, score=replay.score,
                                 player=html.unescape(player.group(1)) if player else None,
                                 date=date.group(1) if date else None, url=url, sha1=sha1(path)))
     with open(MANIFEST, "w") as f:
-        json.dump(dict(source=WR_PAGE, fetched=datetime.date.today().isoformat(), replays=entries), f, indent=1)
+        json.dump(dict(source=WR_PAGE, fetched=datetime.date.today().isoformat(), replays=entries,
+                       **(dict(skipped=skipped) if skipped else {})), f, indent=1)
         f.write("\n")
-    print(f"{len(entries)} replays, {os.path.relpath(MANIFEST, ROOT)}")
+    print(f"{len(entries)} replays, {len(skipped)} skipped, {os.path.relpath(MANIFEST, ROOT)}")
 
 
 # Executables
