@@ -151,6 +151,15 @@ def format_decimal(source: Decimal) -> str:
     return str(source.quantize(Decimal("1.11"))).replace(".00", "")
 
 
+def format_percent(ratio: Decimal) -> str:
+    """Keep enough precision that an incomplete measure cannot read 100%."""
+    percent = ratio * 100
+    places = 1
+    while ratio < 1 and percent.quantize(Decimal(1).scaleb(-places)) == 100:
+        places += 1
+    return f"{percent:.{places}f}%"
+
+
 @dataclass
 class ProgressBar:
     """Amounts of one measure by status, in the order they are drawn."""
@@ -624,7 +633,7 @@ class SummarySection(Container):
         label = Decimal(130)
         details = [" · ".join([n for _, n in row.amounts] + row.notes) for row in rows]
         details_width = Decimal(6) * max(len(d) for d in details)  # 12px text, about 6px a character
-        percents = [f"{100 * row.progress.matched:.1f}%" for row in rows]
+        percents = [format_percent(row.progress.matched) for row in rows]
         percent_width = Decimal(10) * max(len(p) for p in percents)  # clear of the bar
         details_gap = TEXT_MARGIN * 3
         bar = GRID_WIDTH - label - percent_width - details_gap - details_width
@@ -887,7 +896,7 @@ def summary(rows: list[SummaryRow], width: int) -> str:
     lines = [HEADER, ""]
     for r in rows:
         drawn = "".join(BLOCKS[key] * n for key, n in cells(r.progress, bar).items())
-        lines.append(f"{r.label:<{label_width}} {drawn}  {100 * r.progress.matched:5.1f}%  {details(r)}")
+        lines.append(f"{r.label:<{label_width}} {drawn}  {format_percent(r.progress.matched):>6}  {details(r)}")
     return "\n".join(lines)
 
 

@@ -130,7 +130,7 @@ def win(path):
     return path.replace("/", "\\")
 
 
-def run_tool(name, *args):
+def run_tool(name: str, *args: str) -> tuple[int, str]:
     """Runs an MSVC tool; returns its exit code and its output, without the
     lines that only name the file."""
     cmd = ([] if NATIVE else ["wine"]) + [host(BUILD["bin"] + "\\" + name + ".exe"), "/nologo", *args]
@@ -139,6 +139,9 @@ def run_tool(name, *args):
     except subprocess.TimeoutExpired:
         return 1, f"{name} timed out (fatal error?): {' '.join(args)}"
     out = "\n".join(l for l in r.stdout.splitlines() if l.strip() and not l.endswith(".cpp"))
+    # Wine startup failures are reported on stderr, before the compiler or
+    # linker can print anything. Preserve those diagnostics for callers.
+    out = "\n".join(part for part in (out, r.stderr.strip()) if part)
     return r.returncode, out
 
 
