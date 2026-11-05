@@ -7,6 +7,7 @@ libraries.
     project.py orig           verify the original's checksums, copy it to build/
     project.py game           set up build/game: game data, patched exe and DLL
     project.py standalone     copy the standalone exe (and extras) into build/game
+    project.py check-exe      fail unless build/<name>.exe is the original byte for byte
     project.py clean          remove build outputs (keeps the Ghidra project)
 
 The file is project.toml in the game repository's root (the directory
@@ -14,7 +15,7 @@ above tools/), or the one the DECOMP_PROJECT environment variable names.
 Other tools import this module and read `config`, or the shorthands
 below. Paths in the file are relative to the repository's root.
 """
-import copy, glob, os, shutil, subprocess, sys, tomllib
+import copy, glob, hashlib, os, shutil, subprocess, sys, tomllib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -175,6 +176,23 @@ def standalone():
             shutil.copy(path, GAME)
 
 
+def check_exe():
+    """Fails unless the standalone exe is game.original byte for byte,
+    headers, padding and file length included."""
+    with open(EXE, "rb") as f:
+        built = f.read()
+    with open(ORIGINAL, "rb") as f:
+        original = f.read()
+    if built != original:
+        differ = sum(a != b for a, b in zip(built, original)) + abs(len(built) - len(original))
+        first = next((i for i, (a, b) in enumerate(zip(built, original)) if a != b),
+                     min(len(built), len(original)))
+        sys.exit(f"{EXE}: {differ:,} bytes differ from {ORIGINAL}, the first at "
+                 f"file offset {first:#x}")
+    print(f"{EXE} is {ORIGINAL} byte for byte: {len(built):,} bytes, "
+          f"SHA-1 {hashlib.sha1(built).hexdigest()}")
+
+
 def clean():
     paths = ["build/src", GAME, *glob.glob("build/obj*"), *glob.glob(f"build/{NAME}.*"),
              *glob.glob(f"build/{NAME}_exe.*")]
@@ -193,6 +211,8 @@ def main():
         print(" ".join(map(str, value)) if isinstance(value, list) else value)
     elif args == ["ghidra"]:
         print(ghidra_home())
+    elif args == ["check-exe"]:
+        check_exe()
     elif len(args) == 1 and args[0] in ("orig", "game", "standalone", "clean"):
         globals()[args[0]]()
     else:

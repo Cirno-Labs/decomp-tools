@@ -66,6 +66,7 @@ just tools-init hooks
 | `game` | set up `build/game/`: the game's files, an exe patched to load the DLL, the DLL |
 | `run [STEP...]` | run the patched game headless (`wait:S key:K hold:K:S shot:NAME`) |
 | `exe [STEP...]` | link the standalone `build/<name>.exe`; `FEAT=a,b` turns on features |
+| `check-exe` | link the standalone exe and fail unless it is the original byte for byte |
 | `compare-exe [-v]` | compare the standalone exe with the original, section by section |
 | `replay [RPY...]` | play replays to their end headless in the original, twice, and the standalone exe, and compare every calculation (`replay/replay.py`, with `replay.hook`) |
 | `psdk-libs ZIP` | extract VS.NET 2002's Platform SDK import libraries from its install media |
@@ -104,7 +105,7 @@ puts it on `main` at the same commit.
 
 | File | Does |
 | --- | --- |
-| `project.py` | reads `project.toml`; the `orig`, `game`, `standalone` and `clean` steps |
+| `project.py` | reads `project.toml`; the `orig`, `game`, `standalone`, `check-exe` and `clean` steps |
 | `build.py` | compiles `src/` (Shift-JIS, per-file flags, parallel), writes the hook table and thunks, links the DLL and the standalone exe |
 | `compare.py` | compares compiled functions with the original, relocations resolved through `symbols.csv` |
 | `compare_exe.py` | compares the standalone exe with the original: headers, Rich header, sections, imports, code and data by symbol |

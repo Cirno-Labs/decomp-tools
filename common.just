@@ -40,6 +40,10 @@ exe *steps: game
     python3 tools/project.py standalone
     if [ $# -gt 0 ]; then python3 tools/play.py --standalone "$@"; fi
 
+# Link build/<name>.exe and fail unless it is the original byte for byte
+check-exe: exe
+    python3 tools/project.py check-exe
+
 # Compare the standalone exe with the original, section by section (-v: more)
 [positional-arguments]
 compare-exe *args: _orig
